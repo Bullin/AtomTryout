@@ -15,12 +15,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import HabitApp from './HabitApp';
-import { TodoApp, PomodoroApp, CustomApp } from './MiniApps';
-import { APP_META, appStorageKey, BUILD_MS, type Project } from '@/hooks/useProjects';
+import { BUILD_MS, type Project } from '@/hooks/useProjects';
 
 interface PreviewWorkspaceProps {
   project: Project;
+  /** 需求发送后的“正在生成”状态：保留当前预览，不显示空白 */
+  generating: boolean;
   className?: string;
 }
 
@@ -28,117 +28,8 @@ type TabKey = 'preview' | 'code' | 'test' | 'log';
 type DeviceKey = 'desktop' | 'mobile';
 type TestState = 'idle' | 'running' | 'passed';
 
-const CODE_SNIPPETS: Record<string, string> = {
-  habit: `// 每日进步 · 习惯打卡应用（节选）
-export default function HabitApp({ projectId }) {
-  const { habits, addHabit, toggleHabit, removeHabit,
-          doneCount, total, progress } = useHabits(projectId);
-
-  // 状态按项目隔离，通过 localStorage 持久化
-  useEffect(() => {
-    localStorage.setItem(\`atom-taste-habits-\${projectId}\`,
-      JSON.stringify({ date: todayKey(), habits }));
-  }, [habits, projectId]);
-
-  return (
-    <ul>
-      {habits.map((h) => (
-        <HabitRow key={h.id} habit={h}
-          onToggle={() => toggleHabit(h.id)}
-          onRemove={() => removeHabit(h.id)} />
-      ))}
-    </ul>
-  );
-}`,
-  todo: `// 待办清单应用（节选）
-export function TodoApp({ projectId }) {
-  const [todos, setTodos] = usePersisted(
-    \`atom-taste-todo-\${projectId}\`, seedTodos);
-
-  const add = (text) =>
-    setTodos((prev) => [...prev, { id: uid(), text, done: false }]);
-
-  const toggle = (id) =>
-    setTodos((prev) => prev.map((t) =>
-      t.id === id ? { ...t, done: !t.done } : t));
-
-  return (
-    <ul>
-      {todos.map((t) => (
-        <TodoRow key={t.id} todo={t}
-          onToggle={() => toggle(t.id)} />
-      ))}
-    </ul>
-  );
-}`,
-  pomodoro: `// 番茄专注计时器（节选）
-export function PomodoroApp({ projectId }) {
-  const [stats, setStats] = usePersisted(
-    \`atom-taste-pomo-\${projectId}\`, { sessions: 0 });
-  const [left, setLeft] = useState(FOCUS_SECONDS);
-  const [running, setRunning] = useState(false);
-
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => setLeft((s) => s - 1), 1000);
-    return () => clearInterval(t);
-  }, [running]);
-
-  // 归零时：计数 +1 并持久化
-  if (left === 0) setStats((p) => ({ sessions: p.sessions + 1 }));
-}`,
-  custom: `// 自定义应用（节选）：由需求直接命名的可运行记录工具
-export function CustomApp({ projectId, appName, requirement }) {
-  const [items, setItems] = usePersisted(
-    \`atom-taste-custom-\${projectId}\`, []);
-
-  const add = (text) =>
-    setItems((prev) => [...prev, { id: uid(), text, done: false }]);
-
-  const toggle = (id) =>
-    setItems((prev) => prev.map((x) =>
-      x.id === id ? { ...x, done: !x.done } : x));
-
-  return (
-    <section>
-      <h1>{appName}</h1>
-      <p>来自需求：{requirement}</p>
-      <AddBar onAdd={add} />
-      <ItemList items={items} onToggle={toggle} />
-    </section>
-  );
-}`,
-};
-
-/** 读取当前项目的应用数据，用于导出快照 */
-function readAppSnapshot(project: Project): { title: string; rows: string[] } {
-  try {
-    if (project.appType === 'pomodoro') {
-      const raw = localStorage.getItem(appStorageKey('pomodoro', project.id));
-      const s = raw ? JSON.parse(raw) : { sessions: 0 };
-      return { title: '番茄专注', rows: [`累计完成 ${s.sessions ?? 0} 个番茄钟`] };
-    }
-    if (project.appType === 'todo') {
-      const raw = localStorage.getItem(appStorageKey('todo', project.id));
-      const list: { text: string; done: boolean }[] = raw ? JSON.parse(raw) : [];
-      return { title: '待办清单', rows: list.map((t) => `${t.done ? '☑' : '☐'} ${t.text}`) };
-    }
-    if (project.appType === 'custom') {
-      const raw = localStorage.getItem(appStorageKey('custom', project.id));
-      const list: { text: string; done: boolean }[] = raw ? JSON.parse(raw) : [];
-      return { title: project.name, rows: list.map((t) => `${t.done ? '☑' : '☐'} ${t.text}`) };
-    }
-    const raw = localStorage.getItem(appStorageKey('habit', project.id));
-    const parsed = raw ? JSON.parse(raw) : null;
-    const list: { name: string; category: string; done: boolean }[] = parsed?.habits ?? [];
-    return { title: '每日进步', rows: list.map((h) => `${h.done ? '☑' : '☐'} ${h.name}（${h.category}）`) };
-  } catch {
-    return { title: '应用快照', rows: [] };
-  }
-}
-
 /** 右侧预览工作区：预览 / 代码 / 测试 / 日志标签 + 设备切换、刷新、全屏、导出 */
-export default function PreviewWorkspace({ project, className }: PreviewWorkspaceProps) {
+export default function PreviewWorkspace({ project, generating, className }: PreviewWorkspaceProps) {
   const [tab, setTab] = useState<TabKey>('preview');
   const [device, setDevice] = useState<DeviceKey>('desktop');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -190,47 +81,24 @@ export default function PreviewWorkspace({ project, className }: PreviewWorkspac
   }, [testState]);
 
   const handleExport = useCallback(() => {
-    const { title, rows } = readAppSnapshot(project);
-    const html = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${title} · 导出快照</title>
-<style>
-  body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f6faf8;color:#16241d;padding:32px;max-width:560px;margin:0 auto}
-  h1{font-size:20px;margin:0 0 4px}
-  p.date{color:#66766e;font-size:12px;margin:0 0 20px}
-  ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
-  li{border:1px solid #dde7e1;background:#fff;border-radius:8px;padding:10px 14px;font-size:14px}
-</style>
-</head>
-<body>
-<h1>${title}</h1>
-<p class="date">导出时间：${new Date().toLocaleString('zh-CN')}</p>
-<ul>
-${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
-</ul>
-</body>
-</html>`;
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const blob = new Blob([project.appHtml], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${project.appType}-export.html`;
+    a.download = `${project.name || 'app'}-export.html`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast.success('应用已导出', { description: `${project.appType}-export.html 已开始下载` });
+    toast.success('应用已导出', { description: `${project.name || 'app'}-export.html 已开始下载` });
   }, [project]);
 
   const logs = useMemo(() => {
     const lines: { t: number; msg: string }[] = [
       { t: project.createdAt, msg: `项目创建：${project.requirement.slice(0, 40)}` },
-      { t: project.buildingAt, msg: 'AI 开始解析需求并生成应用代码' },
+      { t: project.buildingAt, msg: '解析需求 → 识别标题、字段、按钮与核心交互' },
       ...(project.status === 'done'
-        ? [{ t: project.buildingAt + BUILD_MS, msg: `应用「${APP_META[project.appType].name}」构建完成，已注入预览` }]
+        ? [{ t: project.buildingAt + BUILD_MS, msg: `应用「${project.appLabel}」生成完成，已注入预览` }]
         : []),
       ...project.revisions.map((r) => ({ t: r.at, msg: `收到修改需求：${r.text.slice(0, 40)}` })),
     ];
@@ -336,10 +204,10 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
       {/* 工作区内容 */}
       {tab === 'preview' ? (
         building ? (
-          /* 构建中：加载反馈，不显示旧应用 */
+          /* 首次创建：加载反馈 */
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-muted/40 px-6 text-center">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="text-sm font-medium text-foreground">AI 正在生成「{APP_META[project.appType].name}」应用…</p>
+            <p className="text-sm font-medium text-foreground">正在生成「{project.appLabel}」应用…</p>
             <p className="text-xs text-muted-foreground">解析需求 → 生成界面 → 注入预览</p>
             <div className="mt-2 h-1.5 w-56 overflow-hidden rounded-full bg-secondary">
               <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
@@ -349,7 +217,7 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
           <div className="relative min-h-0 flex-1 overflow-auto bg-muted/40 p-4 sm:p-6">
             {device === 'desktop' ? (
               <div key={`d-${project.id}-${refreshKey}`} className="h-full min-h-[420px] overflow-hidden rounded-lg border bg-card shadow-sm">
-                <AppRenderer project={project} />
+                <AppFrame project={project} />
               </div>
             ) : (
               <div className="flex h-full min-h-[480px] items-start justify-center">
@@ -362,8 +230,17 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
                     <span className="h-1 w-16 rounded-full bg-background/60" />
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto">
-                    <AppRenderer project={project} />
+                    <AppFrame project={project} />
                   </div>
+                </div>
+              </div>
+            )}
+            {/* 生成期间：保留当前预览，仅叠加提示条，不显示空白 */}
+            {generating && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-3">
+                <div className="flex items-center gap-2 rounded-full bg-card/95 px-4 py-2 text-xs font-medium text-primary shadow-sm ring-1 ring-primary/25 backdrop-blur">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  正在生成
                 </div>
               </div>
             )}
@@ -373,10 +250,10 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
         <div className="min-h-0 flex-1 overflow-auto bg-card">
           <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
             <Code2 className="h-3.5 w-3.5" />
-            {project.name} · {APP_META[project.appType].file}
+            {project.name} · generated/{project.appKind}.html
           </div>
           <pre className="overflow-x-auto px-4 py-4 text-[12.5px] leading-relaxed">
-            <code className="font-mono text-foreground">{CODE_SNIPPETS[project.appType]}</code>
+            <code className="font-mono text-foreground">{project.appHtml}</code>
           </pre>
         </div>
       ) : tab === 'test' ? (
@@ -385,12 +262,12 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
             <div className="mb-4 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold">冒烟测试</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">验证 {APP_META[project.appType].label} 的核心交互</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">验证 {project.appLabel} 的核心交互</p>
               </div>
               <button
                 type="button"
                 onClick={handleRunTest}
-                disabled={testState === 'running' || building}
+                disabled={testState === 'running' || building || generating}
                 className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-95 disabled:opacity-50"
               >
                 {testState === 'running' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
@@ -403,7 +280,7 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
               </div>
             ) : (
               <ul className="divide-y rounded-lg border bg-background">
-                {['应用渲染与初始化', '核心交互（新增 / 完成 / 删除）', '本地数据持久化'].map((name, i) => (
+                {['应用渲染与初始化', '核心交互（按钮 / 表单 / 状态更新）', '本地数据持久化'].map((name, i) => (
                   <li key={name} className="flex items-center gap-3 px-4 py-3">
                     {testState === 'running' ? (
                       <Loader2 className={cn('h-4 w-4 text-muted-foreground', i === 0 && 'animate-spin')} />
@@ -453,12 +330,14 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
   );
 }
 
-/** 按项目类型渲染对应的可运行应用 */
-function AppRenderer({ project }: { project: Project }) {
-  if (project.appType === 'todo') return <TodoApp projectId={project.id} />;
-  if (project.appType === 'pomodoro') return <PomodoroApp projectId={project.id} />;
-  if (project.appType === 'custom') {
-    return <CustomApp projectId={project.id} appName={project.name} requirement={project.requirement} />;
-  }
-  return <HabitApp projectId={project.id} />;
+/** 用 iframe 渲染生成的独立 HTML 应用（srcDoc 继承父级源，localStorage 可正常读写） */
+function AppFrame({ project }: { project: Project }) {
+  return (
+    <iframe
+      title={`${project.name} 预览`}
+      srcDoc={project.appHtml}
+      sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
+      className="h-full min-h-[420px] w-full border-0 bg-background"
+    />
+  );
 }

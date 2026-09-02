@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { generateApp } from '@/lib/appGenerator';
 
 export type AppType = 'habit' | 'todo' | 'pomodoro' | 'custom';
 export type ProjectStatus = 'building' | 'done';
@@ -20,6 +21,14 @@ export interface Project {
   revisions: Revision[];
   createdAt: number;
   updatedAt: number;
+  /** 最近一次生成所依据的需求文本 */
+  spec: string;
+  /** 生成的可独立运行 HTML（iframe 预览） */
+  appHtml: string;
+  /** 生成结果类型标识 */
+  appKind: string;
+  /** 生成结果中文名 */
+  appLabel: string;
 }
 
 const PROJECTS_KEY = 'atom-taste-projects-v1';
@@ -73,10 +82,16 @@ export function formatTime(ts: number): string {
 }
 
 function normalize(p: Project): Project {
-  if (p.status === 'building' && Date.now() - p.buildingAt >= BUILD_MS) {
-    return { ...p, status: 'done' };
+  let q = p;
+  // 兼容旧数据：缺少生成字段时按需求即时回填
+  if (typeof q.appHtml !== 'string' || !q.appHtml) {
+    const gen = generateApp(q.spec || q.requirement, q.name);
+    q = { ...q, spec: q.spec || q.requirement, appHtml: gen.html, appKind: gen.kind, appLabel: gen.label };
   }
-  return p;
+  if (q.status === 'building' && Date.now() - q.buildingAt >= BUILD_MS) {
+    return { ...q, status: 'done' };
+  }
+  return q;
 }
 
 function loadProjects(): Project[] {
@@ -122,6 +137,7 @@ export function useProjects() {
   }, []);
   const [projects, setProjects] = useState<Project[]>(initial.ps);
   const [ui, setUi] = useState<UiState>(initial.ui);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -159,10 +175,12 @@ export function useProjects() {
       }
       const id = `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const appType = inferAppType(text);
+      const name = deriveProjectName(text);
+      const gen = generateApp(text, name);
       const now = Date.now();
       const project: Project = {
         id,
-        name: deriveProjectName(text),
+        name,
         requirement: text,
         appType,
         status: 'building',
@@ -170,6 +188,10 @@ export function useProjects() {
         revisions: [],
         createdAt: now,
         updatedAt: now,
+        spec: text,
+        appHtml: gen.html,
+        appKind: gen.kind,
+        appLabel: gen.label,
       };
       setProjects((prev) => [...prev, project]);
       setUi({ mode: 'edit', currentProjectId: id });
@@ -201,7 +223,38 @@ export function useProjects() {
     );
   }, []);
 
+  /** 发送新需求：加入修改记录 → 显示“正在生成”约 2 秒 → 生成新应用并切换预览 */
+  const regenerate = useCallback(
+    (projectId: string, text: string, onDone?: (unsupported: boolean) => void) => {
+      const t = text.trim();
+      if (!t) return;
+      const now = Date.now();
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId
+            ? { ...p, updatedAt: now, revisions: [...p.revisions, { id: `r-${now}`, text: t, time: formatTime(now), at: now }] }
+            : p,
+        ),
+      );
+      setRegeneratingId(projectId);
+      window.setTimeout(() => {
+        let unsupported = false;
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id !== projectId) return p;
+            const gen = generateApp(t, p.name);
+            unsupported = gen.unsupported;
+            return { ...p, spec: t, appHtml: gen.html, appKind: gen.kind, appLabel: gen.label, updatedAt: Date.now() };
+          }),
+        );
+        setRegeneratingId(null);
+        onDone?.(unsupported);
+      }, 2000);
+    },
+    [],
+  );
+
   const activeProject = projects.find((p) => p.id === ui.currentProjectId) ?? null;
 
-  return { projects, ui, activeProject, createProject, openProject, goCreate, addRevision };
+  return { projects, ui, activeProject, createProject, openProject, goCreate, addRevision, regenerate, regeneratingId };
 }

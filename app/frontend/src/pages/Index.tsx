@@ -11,15 +11,18 @@ import { useProjects } from '@/hooks/useProjects';
  * 应用入口：根据项目状态在「创建页」与「编辑工作台」之间切换。
  * - 无项目（localStorage 为空）：显示创建页
  * - 已有项目：直接进入最近打开的三栏编辑工作台（导航常驻，小屏可切换需求/预览）
+ * 中间面板发送需求后：加入修改记录 → 显示“正在生成”约 2 秒 → 生成可运行小应用并切换预览。
  */
 export default function Workbench() {
-  const { projects, ui, activeProject, createProject, openProject, goCreate, addRevision } = useProjects();
+  const { projects, ui, activeProject, createProject, openProject, goCreate, regenerate, regeneratingId } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
   // 创建页：没有项目，或用户主动点击「新建应用」返回
   if (ui.mode !== 'edit' || !activeProject) {
     return <CreatePage projects={projects} onCreate={createProject} onOpen={openProject} />;
   }
+
+  const generating = regeneratingId === activeProject.id;
 
   const handleNewApp = () => {
     goCreate();
@@ -83,11 +86,13 @@ export default function Workbench() {
         <div className="flex min-h-0 flex-1">
           <RequirementPanel
             project={activeProject}
-            onSend={(text) => addRevision(activeProject.id, text)}
+            generating={generating}
+            onSend={(text, onDone) => regenerate(activeProject.id, text, onDone)}
             className={cn('hidden md:flex', view === 'requirements' && 'flex w-full md:w-[340px]')}
           />
           <PreviewWorkspace
             project={activeProject}
+            generating={generating}
             className={cn(view === 'requirements' ? 'hidden md:flex' : 'flex')}
           />
         </div>

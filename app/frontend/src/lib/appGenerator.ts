@@ -1,0 +1,297 @@
+/**
+ * 通用小型应用生成器（本地规则引擎，非真实大模型）。
+ * 根据自然语言需求识别标题、字段、按钮与核心交互，
+ * 生成可在浏览器独立运行的 HTML / CSS / JavaScript 小应用，
+ * 数据通过 localStorage 持久化。不依赖登录、支付、服务端数据库或外部 API Key。
+ */
+
+export interface GenResult {
+  html: string;
+  kind: string;
+  label: string;
+  unsupported: boolean;
+}
+
+const CSS = `
+:root{--bg:#f6faf8;--card:#fff;--line:#dde7e1;--ink:#16241d;--mut:#66766e;--pri:#16a34a;--pri2:#15803d;--warn:#b45309}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);padding:20px;max-width:520px;margin:0 auto}
+h1{font-size:18px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:12px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.grow{flex:1;min-width:120px}
+input,select{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;background:#fff;color:var(--ink);outline:none;min-width:0;width:100%}
+input:focus{border-color:var(--pri)}
+button{border:none;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;background:var(--pri);color:#fff;font-weight:500}
+button:active{transform:scale(.97)}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+button.danger{background:#fff;color:var(--warn);border:1px solid #fde4c8}
+ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+li{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 12px;font-size:14px}
+li .t{flex:1;word-break:break-word}
+li.done .t{text-decoration:line-through;color:var(--mut)}
+.li-del{background:none;color:var(--mut);padding:2px 8px;font-size:16px;border:none}
+.empty{color:var(--mut);font-size:13px;text-align:center;padding:18px;border:1px dashed var(--line);border-radius:8px}
+.big{font-size:52px;font-weight:700;text-align:center;letter-spacing:2px;font-variant-numeric:tabular-nums;margin:8px 0}
+.stat{text-align:center;color:var(--mut);font-size:13px;margin:6px 0 0}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:var(--pri)}
+.chip{font-size:12px;color:var(--mut)}
+.total{display:flex;justify-content:space-between;font-size:14px;padding:10px 2px;border-top:1px solid var(--line);margin-top:10px;font-weight:600}
+.cal-disp{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:18px 14px;text-align:right;font-size:28px;font-weight:600;min-height:64px;word-break:break-all;font-variant-numeric:tabular-nums}
+.cal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.cal-grid button{padding:16px 0;font-size:16px;background:#fff;color:var(--ink);border:1px solid var(--line)}
+.cal-grid button.op{background:#ecfdf5;color:var(--pri2);border-color:#bbf7d0}
+.cal-grid button.eq{background:var(--pri);color:#fff}
+`;
+
+function esc(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function sanitizeKey(name: string): string {
+  const s = String(name).replace(/[^\w\u4e00-\u9fa5-]/g, '').slice(0, 24);
+  return `atom-gen-${s || 'app'}`;
+}
+
+function wrap(title: string, sub: string, body: string, script: string): string {
+  return (
+    '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8" />' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0" />' +
+    '<title>' + esc(title) + '</title><style>' + CSS + '</style></head><body>' +
+    '<h1>' + esc(title) + '</h1><p class="sub">' + esc(sub) + '</p>' +
+    body + '<scr' + 'ipt>' + script + '</scr' + 'ipt></body></html>'
+  );
+}
+
+const LIST_JS = (key: string, placeholder: string) => `
+var KEY='${key}';
+var items=JSON.parse(localStorage.getItem(KEY)||'[]');
+function save(){localStorage.setItem(KEY,JSON.stringify(items));}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function render(){
+  var ul=document.getElementById('list');
+  if(!items.length){ul.innerHTML='<div class="empty">还没有记录，添加第一条吧</div>';return;}
+  ul.innerHTML='';
+  items.forEach(function(it){
+    var li=document.createElement('li');
+    if(it.done)li.className='done';
+    var c=document.createElement('input');c.type='checkbox';c.checked=!!it.done;c.style.width='16px';
+    c.onchange=function(){it.done=!it.done;save();render();};
+    var t=document.createElement('span');t.className='t';t.textContent=it.text;
+    var d=document.createElement('button');d.className='li-del';d.textContent='×';d.title='删除';
+    d.onclick=function(){items=items.filter(function(x){return x.id!==it.id;});save();render();};
+    li.appendChild(c);li.appendChild(t);li.appendChild(d);ul.appendChild(li);
+  });
+  var n=document.getElementById('cnt');if(n)n.textContent='共 '+items.length+' 条';
+}
+document.getElementById('add').onclick=function(){
+  var i=document.getElementById('inp');var v=i.value.trim();if(!v)return;
+  items.push({id:uid(),text:v,done:false});i.value='';save();render();
+};
+document.getElementById('inp').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('add').click();});
+render();`;
+
+function buildTodo(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="row"><input id="inp" class="grow" placeholder="输入一条待办" /><button id="add">添加</button></div>' +
+    '<p class="chip" id="cnt"></p><ul id="list"></ul>';
+  return { html: wrap(name, '待办清单 · 数据保存在本地浏览器', body, LIST_JS(key, '待办')), kind: 'todo', label: '待办清单', unsupported: false };
+}
+
+function buildHabit(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="row"><input id="inp" class="grow" placeholder="输入一个习惯，如：阅读 30 分钟" /><button id="add">添加</button></div>' +
+    '<p class="chip" id="cnt"></p><ul id="list"></ul>';
+  return { html: wrap(name, '习惯打卡 · 勾选即完成今日打卡', body, LIST_JS(key, '习惯')), kind: 'habit', label: '习惯打卡', unsupported: false };
+}
+
+function buildGeneric(name: string, t: string): GenResult {
+  const key = sanitizeKey(name);
+  const hasMoney = /金额|钱|元|价格|费用|花费|数量|个数|分数/.test(t);
+  const body =
+    '<div class="row"><input id="inp" class="grow" placeholder="输入内容" />' +
+    (hasMoney ? '<input id="amt" style="max-width:110px" placeholder="数值" inputmode="decimal" />' : '') +
+    '<button id="add">添加</button></div>' +
+    '<p class="chip" id="cnt"></p><ul id="list"></ul>';
+  const script = hasMoney
+    ? `var KEY='${key}';var items=JSON.parse(localStorage.getItem(KEY)||'[]');
+function save(){localStorage.setItem(KEY,JSON.stringify(items));}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function render(){var ul=document.getElementById('list');
+ if(!items.length){ul.innerHTML='<div class="empty">还没有记录</div>';var n=document.getElementById('cnt');if(n)n.textContent='';return;}
+ ul.innerHTML='';var total=0;
+ items.forEach(function(it){total+=(+it.amt||0);
+  var li=document.createElement('li');var t=document.createElement('span');t.className='t';t.textContent=it.text+(it.amt?('（'+it.amt+'）'):'');
+  var d=document.createElement('button');d.className='li-del';d.textContent='×';d.onclick=function(){items=items.filter(function(x){return x.id!==it.id;});save();render();};
+  li.appendChild(t);li.appendChild(d);ul.appendChild(li);});
+ document.getElementById('cnt').textContent='共 '+items.length+' 条 · 合计 '+total;}
+document.getElementById('add').onclick=function(){var i=document.getElementById('inp');var a=document.getElementById('amt');var v=i.value.trim();if(!v)return;
+ items.push({id:uid(),text:v,amt:a?a.value.trim():''});i.value='';if(a)a.value='';save();render();};
+render();`
+    : LIST_JS(key, '记录');
+  return { html: wrap(name, '自定义记录应用 · 数据保存在本地浏览器', body, script), kind: 'generic', label: '自定义应用', unsupported: false };
+}
+
+function buildPomodoro(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="card"><div class="big" id="time">25:00</div>' +
+    '<p class="stat" id="sess"></p>' +
+    '<p class="stat" id="msg" style="opacity:0;transition:opacity .4s;color:var(--pri);font-weight:600"></p></div>' +
+    '<div class="row"><button id="start" class="grow">开始</button><button id="reset" class="ghost grow">重置</button></div>' +
+    '<p class="chip">标准番茄钟 25 分钟，完成一次自动累计。</p>';
+  const script = `var KEY='${key}';var S=JSON.parse(localStorage.getItem(KEY)||'{"sessions":0}');
+var FOCUS=25*60,left=FOCUS,run=null;
+var el=document.getElementById('time'),se=document.getElementById('sess'),btn=document.getElementById('start'),msg=document.getElementById('msg');
+function fmt(x){var m=Math.floor(x/60),s=x%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+function render(){el.textContent=fmt(left);se.textContent='已完成 '+S.sessions+' 个番茄钟';}
+function save(){localStorage.setItem(KEY,JSON.stringify(S));}
+function flash(m){msg.textContent=m;msg.style.opacity='1';setTimeout(function(){msg.style.opacity='0';},1800);}
+function stop(){if(run){clearInterval(run);run=null;}btn.textContent='开始';}
+function start(){if(run){stop();return;}run=setInterval(function(){left--;if(left<=0){S.sessions++;save();left=FOCUS;stop();render();flash('完成一个番茄钟 🎉');}else render();},1000);btn.textContent='暂停';}
+btn.onclick=start;
+document.getElementById('reset').onclick=function(){stop();left=FOCUS;render();};
+render();`;
+  return { html: wrap(name, '番茄专注计时 · 数据保存在本地浏览器', body, script), kind: 'pomodoro', label: '番茄专注', unsupported: false };
+}
+
+function buildCountdown(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="card"><div class="big" id="time">05:00</div><p class="stat" id="msg" style="opacity:0;transition:opacity .4s;color:var(--pri);font-weight:600"></p></div>' +
+    '<div class="row"><input id="mins" style="max-width:120px" type="number" min="1" value="5" placeholder="分钟" /><button id="start" class="grow">开始</button><button id="reset" class="ghost">重置</button></div>';
+  const script = `var KEY='${key}';var saved=parseInt(localStorage.getItem(KEY)||'300',10);var total=saved,left=saved,run=null;
+var el=document.getElementById('time'),btn=document.getElementById('start'),msg=document.getElementById('msg'),mi=document.getElementById('mins');
+function fmt(x){var m=Math.floor(x/60),s=x%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+function render(){el.textContent=fmt(left);}
+function stop(){if(run){clearInterval(run);run=null;}btn.textContent='开始';}
+function start(){if(run){stop();return;}total=left;run=setInterval(function(){left--;if(left<=0){stop();render();msg.textContent='⏰ 时间到！';msg.style.opacity='1';setTimeout(function(){msg.style.opacity='0';},2500);}else render();},1000);btn.textContent='暂停';}
+btn.onclick=start;
+document.getElementById('reset').onclick=function(){stop();var m=parseInt(mi.value,10)||5;left=m*60;total=left;localStorage.setItem(KEY,String(left));render();};
+mi.onchange=function(){var m=parseInt(mi.value,10)||5;left=m*60;total=left;localStorage.setItem(KEY,String(left));render();};
+render();`;
+  return { html: wrap(name, '倒计时 · 数据保存在本地浏览器', body, script), kind: 'countdown', label: '倒计时', unsupported: false };
+}
+
+function buildAccounting(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="row"><input id="note" class="grow" placeholder="备注，如：午餐" />' +
+    '<input id="amt" style="max-width:110px" placeholder="金额" inputmode="decimal" />' +
+    '<select id="type" style="max-width:96px"><option value="expense">支出</option><option value="income">收入</option></select>' +
+    '<button id="add">记一笔</button></div>' +
+    '<div class="card"><div class="total"><span>结余</span><span id="bal">0</span></div>' +
+    '<div class="chip" style="display:flex;justify-content:space-between"><span>收入 <b id="inc">0</b></span><span>支出 <b id="exp">0</b></span></div></div>' +
+    '<ul id="list"></ul>';
+  const script = `var KEY='${key}';var items=JSON.parse(localStorage.getItem(KEY)||'[]');
+function save(){localStorage.setItem(KEY,JSON.stringify(items));}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function render(){var ul=document.getElementById('list');var inc=0,exp=0;
+ items.forEach(function(it){var a=+it.amt||0;if(it.type==='income')inc+=a;else exp+=a;});
+ document.getElementById('inc').textContent=inc;document.getElementById('exp').textContent=exp;document.getElementById('bal').textContent=(inc-exp);
+ if(!items.length){ul.innerHTML='<div class="empty">还没有账目</div>';return;}
+ ul.innerHTML='';
+ items.slice().reverse().forEach(function(it){var li=document.createElement('li');
+  var t=document.createElement('span');t.className='t';t.textContent=(it.type==='income'?'+':'-')+' '+it.amt+'  '+(it.note||'');
+  if(it.type==='income')t.style.color='var(--pri2)';
+  var d=document.createElement('button');d.className='li-del';d.textContent='×';d.onclick=function(){items=items.filter(function(x){return x.id!==it.id;});save();render();};
+  li.appendChild(t);li.appendChild(d);ul.appendChild(li);});}
+document.getElementById('add').onclick=function(){var n=document.getElementById('note'),a=document.getElementById('amt'),ty=document.getElementById('type');
+ var amt=parseFloat(a.value);if(!amt||amt<=0){a.focus();return;}
+ items.push({id:uid(),note:n.value.trim(),amt:amt,type:ty.value});n.value='';a.value='';save();render();};
+render();`;
+  return { html: wrap(name, '记账应用 · 数据保存在本地浏览器', body, script), kind: 'accounting', label: '记账', unsupported: false };
+}
+
+function buildCalculator(name: string): GenResult {
+  const body =
+    '<div class="cal-disp" id="disp">0</div><div class="cal-grid" id="grid"></div>';
+  const script = `var disp=document.getElementById('disp'),expr='';
+function show(){disp.textContent=expr||'0';}
+function calc(e){if(!/^[0-9+\\-*/(). ]+$/.test(e))return null;try{var r=Function('"use strict";return('+e+')')();return (typeof r==='number'&&isFinite(r))?String(Math.round(r*1e6)/1e6):null;}catch(x){return null;}}
+var keys=['C','←','(',')','7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'];
+var grid=document.getElementById('grid');
+keys.forEach(function(k){var b=document.createElement('button');b.textContent=k;
+ if(k==='='||k==='C'||k==='←')b.className=k==='='?'eq':'op';
+ if(/[+\\-*/()]/.test(k)&&k!=='C'&&k!=='←')b.className='op';
+ b.onclick=function(){
+  if(k==='C'){expr='';show();return;}
+  if(k==='←'){expr=expr.slice(0,-1);show();return;}
+  if(k==='='){var r=calc(expr);expr=(r===null?'错误':r);show();return;}
+  expr+=k;show();};
+ grid.appendChild(b);});
+show();`;
+  return { html: wrap(name, '计算器 · 浏览器内运行', body, script), kind: 'calculator', label: '计算器', unsupported: false };
+}
+
+function buildVoting(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="row"><input id="inp" class="grow" placeholder="输入一个选项" /><button id="add">添加选项</button></div>' +
+    '<ul id="list"></ul><div class="row" style="margin-top:12px"><button id="reset" class="ghost">清空票数</button></div>';
+  const script = `var KEY='${key}';var opts=JSON.parse(localStorage.getItem(KEY)||'[]');
+function save(){localStorage.setItem(KEY,JSON.stringify(opts));}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function render(){var ul=document.getElementById('list');var max=1;opts.forEach(function(o){if(o.count>max)max=o.count;});
+ if(!opts.length){ul.innerHTML='<div class="empty">还没有选项</div>';return;}
+ ul.innerHTML='';
+ opts.forEach(function(o){var li=document.createElement('li');li.style.display='block';
+  var top=document.createElement('div');top.style.display='flex';top.style.alignItems='center';top.style.gap='10px';
+  var t=document.createElement('span');t.className='t';t.textContent=o.label;
+  var v=document.createElement('button');v.textContent='投票 +1';v.style.padding='4px 10px';v.onclick=function(){o.count++;save();render();};
+  var c=document.createElement('span');c.className='chip';c.textContent=o.count+' 票';
+  var d=document.createElement('button');d.className='li-del';d.textContent='×';d.onclick=function(){opts=opts.filter(function(x){return x.id!==o.id;});save();render();};
+  top.appendChild(t);top.appendChild(c);top.appendChild(v);top.appendChild(d);
+  var bar=document.createElement('div');bar.className='bar';var i=document.createElement('i');i.style.width=(o.count/max*100)+'%';bar.appendChild(i);
+  li.appendChild(top);li.appendChild(bar);ul.appendChild(li);});}
+document.getElementById('add').onclick=function(){var inp=document.getElementById('inp');var v=inp.value.trim();if(!v)return;
+ opts.push({id:uid(),label:v,count:0});inp.value='';save();render();};
+document.getElementById('reset').onclick=function(){opts.forEach(function(o){o.count=0;});save();render();};
+render();`;
+  return { html: wrap(name, '投票应用 · 数据保存在本地浏览器', body, script), kind: 'voting', label: '投票', unsupported: false };
+}
+
+function buildUnsupported(name: string): GenResult {
+  const body =
+    '<div class="card" style="text-align:center">' +
+    '<p style="font-size:15px;font-weight:600;margin:0 0 6px">当前仅支持浏览器内运行的小型应用</p>' +
+    '<p class="sub" style="margin:0">无法生成需要登录、支付、服务端数据库或外部 API 的应用。<br />试试：番茄钟、待办、记账、习惯打卡、计算器、投票、倒计时。</p></div>';
+  return { html: wrap(name, '需求超出当前生成范围', body, 'void 0;'), kind: 'unsupported', label: '暂不支持', unsupported: true };
+}
+
+function detect(t: string): string {
+  if (/登录|注册|支付|付款|信用卡|数据库|服务器|后端|接口|地图|定位|导航|实时|聊天|客服|人工智能|\bAI\b|视频|直播|语音|3D|三维|区块链|多用户|协作|权限|用户系统/.test(t)) return 'unsupported';
+  if (/番茄|pomodoro/i.test(t)) return 'pomodoro';
+  if (/倒计时|countdown/i.test(t)) return 'countdown';
+  if (/计算器|calculator|算术|加减乘除/.test(t)) return 'calculator';
+  if (/投票|vote|表决/.test(t)) return 'voting';
+  if (/记账|账本|支出|收入|记一笔|报销|预算|expense|budget/i.test(t)) return 'accounting';
+  if (/待办|清单|todo/i.test(t)) return 'todo';
+  if (/习惯|打卡|habit/i.test(t)) return 'habit';
+  return 'generic';
+}
+
+/** 根据需求文本生成可运行的小应用 HTML */
+export function generateApp(spec: string, appName: string): GenResult {
+  const t = (spec || '').toLowerCase();
+  const name = appName || '我的应用';
+  switch (detect(t)) {
+    case 'unsupported': return buildUnsupported(name);
+    case 'pomodoro': return buildPomodoro(name);
+    case 'countdown': return buildCountdown(name);
+    case 'calculator': return buildCalculator(name);
+    case 'voting': return buildVoting(name);
+    case 'accounting': return buildAccounting(name);
+    case 'todo': return buildTodo(name);
+    case 'habit': return buildHabit(name);
+    default: return buildGeneric(name, t);
+  }
+}
