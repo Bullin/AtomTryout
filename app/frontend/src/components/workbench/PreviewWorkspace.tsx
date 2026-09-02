@@ -227,7 +227,7 @@ ${rows || '<li>暂无习惯数据</li>'}
             className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:md:bg-accent hover:md:text-foreground active:scale-95"
           >
             <Download className="h-3.5 w-3.5" />
-            导出
+            <span className="hidden sm:inline">导出</span>
           </button>
         </div>
       </header>
