@@ -11,15 +11,42 @@ import { formatTime, useProjects } from '@/hooks/useProjects';
  * 应用入口：根据项目状态在「创建页」与「编辑工作台」之间切换。
  * - 无项目（localStorage 为空）：显示创建页
  * - 已有项目：直接进入最近打开的三栏编辑工作台（导航常驻，小屏可切换需求/预览）
- * 中间面板发送需求后：加入修改记录 → 显示“正在生成”约 2 秒 → 生成可运行小应用并切换预览。
+ * 项目数据 localStorage 缓存 + Atoms Cloud 云端同步；最近项目支持删除。
  */
 export default function Workbench() {
-  const { projects, ui, activeProject, createProject, openProject, goCreate, regenerate, regeneratingId, setActiveVersion } = useProjects();
+  const {
+    projects,
+    ui,
+    activeProject,
+    authState,
+    syncing,
+    createProject,
+    openProject,
+    goCreate,
+    regenerate,
+    regeneratingId,
+    setActiveVersion,
+    deleteProject,
+    loginToCloud,
+  } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
   // 创建页：没有项目，或用户主动点击「新建应用」返回
   if (ui.mode !== 'edit' || !activeProject) {
-    return <CreatePage projects={projects} onCreate={createProject} onOpen={openProject} />;
+    return (
+      <CreatePage
+        projects={projects}
+        authState={authState}
+        syncing={syncing}
+        onCreate={createProject}
+        onOpen={openProject}
+        onDelete={(id) => {
+          deleteProject(id);
+          toast('项目已删除', { description: authState === 'authenticated' ? '云端记录同步删除' : undefined });
+        }}
+        onLogin={loginToCloud}
+      />
+    );
   }
 
   const generating = regeneratingId === activeProject.id;
@@ -33,15 +60,27 @@ export default function Workbench() {
     toast('设置', { description: '偏好设置将在后续版本开放' });
   };
 
+  const handleDelete = (id: string) => {
+    const name = projects.find((p) => p.id === id)?.name;
+    deleteProject(id);
+    toast('项目已删除', {
+      description: authState === 'authenticated' ? `「${name}」已从本地与云端移除` : `「${name}」已从本地移除`,
+    });
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-sm">
       {/* 左侧导航栏：任何屏幕尺寸下都保持展示，不收起 */}
       <LeftNav
         projects={projects}
         activeProject={activeProject}
+        authState={authState}
+        syncing={syncing}
         onSelectProject={openProject}
+        onDeleteProject={handleDelete}
         onNewApp={handleNewApp}
         onSettings={handleSettings}
+        onLogin={loginToCloud}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">

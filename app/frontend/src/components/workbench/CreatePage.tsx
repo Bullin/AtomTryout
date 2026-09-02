@@ -1,12 +1,17 @@
 import { useState } from 'react';
-import { AlertCircle, Atom, Clock3, Inbox, Sparkles } from 'lucide-react';
+import { AlertCircle, Atom, Check, Clock3, Cloud, CloudOff, Inbox, Loader2, LogIn, Sparkles, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatTime, type Project } from '@/hooks/useProjects';
+import { cn } from '@/lib/utils';
+import { formatTime, type AuthState, type Project } from '@/hooks/useProjects';
 
 interface CreatePageProps {
   projects: Project[];
+  authState: AuthState;
+  syncing: boolean;
   onCreate: (requirement: string) => { ok: true; id: string } | { ok: false; error: string };
   onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+  onLogin: () => void;
 }
 
 const EXAMPLES = [
@@ -15,8 +20,68 @@ const EXAMPLES = [
   '创建一个番茄专注计时器，帮助我专注工作 25 分钟',
 ];
 
-/** 无项目时的创建页：品牌标识 + 主标题 + 大输入框 + 示例需求 + 最近项目 */
-export default function CreatePage({ projects, onCreate, onOpen }: CreatePageProps) {
+/** 最近项目行：点击打开；悬停显示删除；删除需行内二次确认 */
+function RecentItem({ project, onOpen, onDelete }: { project: Project; onOpen: (id: string) => void; onDelete: (id: string) => void }) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3">
+        <span className="min-w-0 flex-1 truncate text-sm text-destructive">确认删除「{project.name}」？此操作不可恢复。</span>
+        <button
+          type="button"
+          onClick={() => {
+            onDelete(project.id);
+            setConfirming(false);
+            toast.success('项目已删除');
+          }}
+          className="flex shrink-0 items-center gap-1 rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground"
+        >
+          <Check className="h-3 w-3" />
+          删除
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+        >
+          取消
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group flex items-center">
+      <button
+        type="button"
+        onClick={() => onOpen(project.id)}
+        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:md:bg-accent"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+          <Atom className="h-3.5 w-3.5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-foreground">{project.name}</span>
+          <span className="block truncate text-xs text-muted-foreground">{project.requirement}</span>
+        </span>
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatTime(project.updatedAt)}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        aria-label={`删除项目 ${project.name}`}
+        title="删除项目"
+        className="mr-3 shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/** 无项目时的创建页：品牌标识 + 主标题 + 大输入框 + 示例需求 + 最近项目（可删除） */
+export default function CreatePage({ projects, authState, syncing, onCreate, onOpen, onDelete, onLogin }: CreatePageProps) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recent = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -34,15 +99,34 @@ export default function CreatePage({ projects, onCreate, onOpen }: CreatePagePro
   return (
     <div className="flex h-screen w-full justify-center overflow-y-auto bg-background">
       <main className="flex w-full max-w-[640px] flex-col px-6 py-12 sm:py-16">
-        {/* 品牌标识 */}
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Atom className="h-4 w-4" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold leading-none tracking-tight">Atom 尝鲜</p>
-            <p className="mt-1 text-xs text-muted-foreground">描述想法，即刻生成可运行的应用</p>
+        {/* 品牌标识 + 云端状态 */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Atom className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold leading-none tracking-tight">Atom 尝鲜</p>
+              <p className="mt-1 text-xs text-muted-foreground">描述想法，即刻生成可运行的应用</p>
+            </div>
           </div>
+          {authState === 'authenticated' ? (
+            <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary ring-1 ring-inset ring-primary/25">
+              {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Cloud className="h-3 w-3" />}
+              {syncing ? '同步中' : '云端已保存'}
+            </span>
+          ) : authState === 'anonymous' ? (
+            <button
+              type="button"
+              onClick={onLogin}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-foreground"
+              title="登录后项目将自动保存到云端"
+            >
+              <CloudOff className="h-3 w-3" />
+              登录云端保存
+              <LogIn className="h-3 w-3" />
+            </button>
+          ) : null}
         </div>
 
         {/* 主标题 */}
@@ -110,11 +194,12 @@ export default function CreatePage({ projects, onCreate, onOpen }: CreatePagePro
           </div>
         </div>
 
-        {/* 最近项目 */}
+        {/* 最近项目（支持删除） */}
         <div className="mt-10">
           <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <Clock3 className="h-3 w-3" />
             最近项目
+            {recent.length > 0 && <span className={cn('ml-1 normal-case tracking-normal')}>· 悬停可删除</span>}
           </p>
           {recent.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center">
@@ -125,20 +210,7 @@ export default function CreatePage({ projects, onCreate, onOpen }: CreatePagePro
             <ul className="divide-y rounded-lg border bg-card">
               {recent.map((p) => (
                 <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(p.id)}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:md:bg-accent"
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                      <Atom className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{p.requirement}</span>
-                    </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatTime(p.updatedAt)}</span>
-                  </button>
+                  <RecentItem project={p} onOpen={onOpen} onDelete={onDelete} />
                 </li>
               ))}
             </ul>

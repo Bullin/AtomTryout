@@ -1,13 +1,31 @@
-import { Atom, CalendarCheck, LayoutTemplate, ListTodo, Plus, Settings, Timer } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Atom,
+  CalendarCheck,
+  Cloud,
+  CloudOff,
+  LayoutTemplate,
+  ListTodo,
+  Loader2,
+  LogIn,
+  Plus,
+  Settings,
+  Timer,
+  Trash2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { APP_META, type AppType, type Project } from '@/hooks/useProjects';
+import { APP_META, type AppType, type AuthState, type Project } from '@/hooks/useProjects';
 
 interface LeftNavProps {
   projects: Project[];
   activeProject: Project | null;
+  authState: AuthState;
+  syncing: boolean;
   onSelectProject: (id: string) => void;
+  onDeleteProject: (id: string) => void;
   onNewApp: () => void;
   onSettings: () => void;
+  onLogin: () => void;
   className?: string;
 }
 
@@ -18,12 +36,95 @@ const TYPE_ICON: Record<AppType, typeof CalendarCheck> = {
   custom: LayoutTemplate,
 };
 
-/** 左侧窄导航栏：产品名称、新建应用、当前项目、最近项目（真实数据）、设置入口 */
-export default function LeftNav({ projects, activeProject, onSelectProject, onNewApp, onSettings, className }: LeftNavProps) {
+/** 单个项目行：点击打开；悬停显示删除；删除需行内二次确认，避免误删 */
+function ProjectRow({
+  project,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  project: Project;
+  active?: boolean;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex w-full items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-sm ring-1 ring-inset ring-destructive/30">
+        <span className="min-w-0 flex-1 truncate text-destructive">删除「{project.name}」？</span>
+        <button
+          type="button"
+          onClick={() => {
+            onDelete(project.id);
+            setConfirming(false);
+          }}
+          className="shrink-0 rounded bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-destructive-foreground"
+        >
+          删除
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-background"
+        >
+          取消
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-150',
+        active
+          ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/30'
+          : 'text-sidebar-foreground hover:md:bg-sidebar-accent',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(project.id)}
+        aria-current={active ? 'page' : undefined}
+        title={project.requirement}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <FolderIcon type={project.appType} />
+        <span className="truncate">{project.name}</span>
+        {active && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        aria-label={`删除项目 ${project.name}`}
+        title="删除项目"
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/** 左侧窄导航栏：产品名称、新建应用、当前项目、最近项目（真实数据）、云端同步状态、设置 */
+export default function LeftNav({
+  projects,
+  activeProject,
+  authState,
+  syncing,
+  onSelectProject,
+  onDeleteProject,
+  onNewApp,
+  onSettings,
+  onLogin,
+  className,
+}: LeftNavProps) {
   const recent = projects
     .filter((p) => p.id !== activeProject?.id)
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 2);
+    .slice(0, 3);
 
   return (
     <aside className={cn('flex w-[220px] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground', className)}>
@@ -51,16 +152,7 @@ export default function LeftNav({ projects, activeProject, onSelectProject, onNe
       <div className="px-3 pt-4">
         <p className="px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">当前项目</p>
         {activeProject ? (
-          <button
-            type="button"
-            onClick={() => onSelectProject(activeProject.id)}
-            aria-current="page"
-            className="flex w-full items-center gap-2 rounded-md bg-primary/10 px-2 py-1.5 text-left text-sm font-medium text-primary ring-1 ring-inset ring-primary/30"
-          >
-            <FolderIcon type={activeProject.appType} />
-            <span className="truncate">{activeProject.name}</span>
-            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-          </button>
+          <ProjectRow project={activeProject} active onSelect={onSelectProject} onDelete={onDeleteProject} />
         ) : (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">暂无项目</p>
         )}
@@ -74,23 +166,36 @@ export default function LeftNav({ projects, activeProject, onSelectProject, onNe
         ) : (
           <div className="flex flex-col gap-0.5">
             {recent.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelectProject(p.id)}
-                title={p.requirement}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground transition-colors duration-150 hover:md:bg-sidebar-accent"
-              >
-                <FolderIcon type={p.appType} />
-                <span className="truncate">{p.name}</span>
-              </button>
+              <ProjectRow key={p.id} project={p} onSelect={onSelectProject} onDelete={onDeleteProject} />
             ))}
           </div>
         )}
       </div>
 
-      {/* 设置入口（固定底部） */}
+      {/* 底部：云端同步状态 + 设置 */}
       <div className="mt-auto border-t px-3 py-2">
+        {authState === 'authenticated' ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+            {syncing ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : <Cloud className="h-3.5 w-3.5 shrink-0 text-primary" />}
+            <span>{syncing ? '正在同步到云端…' : '已登录 · 项目已云端保存'}</span>
+          </div>
+        ) : authState === 'loading' ? (
+          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            <span>检查登录状态…</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onLogin}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors duration-150 hover:md:bg-sidebar-accent hover:md:text-foreground"
+            title="登录后项目将自动保存到云端，跨设备可用"
+          >
+            <CloudOff className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">未登录 · 仅本地保存</span>
+            <LogIn className="h-3.5 w-3.5 shrink-0" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onSettings}

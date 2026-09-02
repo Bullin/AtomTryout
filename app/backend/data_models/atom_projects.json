@@ -1,0 +1,64 @@
+{
+    "title": "atom_projects",
+    "description": "Atom 工作台用户项目（云端保存）",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "自增主键"
+        },
+        "user_id": {
+            "type": "string",
+            "description": "所属用户（系统管理）"
+        },
+        "project_key": {
+            "type": "string",
+            "description": "客户端生成的项目唯一标识"
+        },
+        "name": {
+            "type": "string",
+            "description": "项目名称"
+        },
+        "requirement": {
+            "type": "string",
+            "description": "最新需求文本"
+        },
+        "app_type": {
+            "type": "string",
+            "description": "应用类型 habit|todo|pomodoro|custom"
+        },
+        "status": {
+            "type": "string",
+            "description": "状态 building|done"
+        },
+        "building_at": {
+            "type": "integer",
+            "description": "开始构建时间戳(ms)"
+        },
+        "revisions": {
+            "type": "string",
+            "description": "需求修改记录 JSON 数组"
+        },
+        "versions": {
+            "type": "string",
+            "description": "应用版本 JSON 数组"
+        },
+        "active_ver": {
+            "type": "integer",
+            "description": "当前激活版本号"
+        },
+        "client_created_at": {
+            "type": "integer",
+            "description": "客户端创建时间戳(ms)"
+        },
+        "client_updated_at": {
+            "type": "integer",
+            "description": "客户端更新时间戳(ms)"
+        }
+    },
+    "required": [
+        "project_key",
+        "name",
+        "user_id"
+    ]
+}

@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateApp } from '@/lib/appGenerator';
+import {
+  cloudCreate,
+  cloudDelete,
+  cloudList,
+  cloudLogin,
+  cloudMe,
+  cloudUpdate,
+  type CloudPayload,
+  type CloudRow,
+} from '@/lib/cloudSync';
 
 export type AppType = 'habit' | 'todo' | 'pomodoro' | 'custom';
 export type ProjectStatus = 'building' | 'done';
+export type AuthState = 'loading' | 'authenticated' | 'anonymous';
 
 export interface Revision {
   id: string;
@@ -45,6 +56,8 @@ export interface Project {
   versions: AppVersion[];
   /** 当前激活的版本号 */
   activeVer: number;
+  /** 云端 atom_projects 表行 id（登录后同步时写入） */
+  cloudId?: number | null;
 }
 
 /** 取项目当前激活版本（缺省回退到最新版本） */
@@ -173,7 +186,67 @@ function loadUi(projects: Project[]): UiState {
   return last ? { mode: 'edit', currentProjectId: last.id } : { mode: 'create', currentProjectId: null };
 }
 
-/** 项目持久化 + 页面状态（创建页 / 编辑页）管理 */
+/** 项目 → 云端行载荷 */
+function toPayload(p: Project): CloudPayload {
+  return {
+    project_key: p.id,
+    name: p.name,
+    requirement: p.requirement,
+    app_type: p.appType,
+    status: p.status,
+    building_at: p.buildingAt,
+    revisions: JSON.stringify(p.revisions),
+    versions: JSON.stringify(p.versions),
+    active_ver: p.activeVer,
+    client_created_at: p.createdAt,
+    client_updated_at: p.updatedAt,
+  };
+}
+
+/** 云端行 → 项目（解析失败返回 null） */
+function fromRow(r: CloudRow): Project | null {
+  if (!r.project_key) return null;
+  try {
+    const revisions = JSON.parse(r.revisions || '[]');
+    const versions = JSON.parse(r.versions || '[]');
+    const p: Project = {
+      id: r.project_key,
+      name: r.name || '我的应用',
+      requirement: r.requirement || '',
+      appType: (r.app_type as AppType) || 'custom',
+      status: (r.status as ProjectStatus) || 'done',
+      buildingAt: r.building_at || r.client_updated_at || Date.now(),
+      revisions: Array.isArray(revisions) ? revisions : [],
+      createdAt: r.client_created_at || Date.now(),
+      updatedAt: r.client_updated_at || Date.now(),
+      versions: Array.isArray(versions) ? versions : [],
+      activeVer: r.active_ver || 1,
+      cloudId: r.id,
+    };
+    return normalize(p);
+  } catch {
+    return null;
+  }
+}
+
+/** 本地与云端按 project_key 合并：同 key 取更新时间较新者；本地独有项保留（后续自动上传） */
+function mergeProjects(local: Project[], cloud: Project[]): Project[] {
+  const map = new Map<string, Project>();
+  for (const p of local) map.set(p.id, p);
+  for (const c of cloud) {
+    const ex = map.get(c.id);
+    if (!ex) {
+      map.set(c.id, c);
+    } else if (c.updatedAt > ex.updatedAt) {
+      map.set(c.id, { ...c, cloudId: c.cloudId ?? ex.cloudId });
+    } else if (!ex.cloudId && c.cloudId) {
+      map.set(c.id, { ...ex, cloudId: c.cloudId });
+    }
+  }
+  return [...map.values()].filter((p) => p.id !== 'p-demo-daily');
+}
+
+/** 项目持久化（localStorage 缓存 + Atoms Cloud 同步）+ 页面状态管理 */
 export function useProjects() {
   const initial = useMemo(() => {
     const ps = loadProjects();
@@ -182,6 +255,20 @@ export function useProjects() {
   const [projects, setProjects] = useState<Project[]>(initial.ps);
   const [ui, setUi] = useState<UiState>(initial.ui);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [syncing, setSyncing] = useState(false);
+
+  const projectsRef = useRef(projects);
+  const authRef = useRef(authState);
+  /** 每个项目上次成功同步的载荷签名，用于跳过无变化的写入 */
+  const lastSyncedRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+  useEffect(() => {
+    authRef.current = authState;
+  }, [authState]);
 
   useEffect(() => {
     try {
@@ -198,6 +285,67 @@ export function useProjects() {
       // 忽略
     }
   }, [ui]);
+
+  /** 登录后拉取云端项目并与本地合并 */
+  const loadCloud = useCallback(async () => {
+    try {
+      const rows = await cloudList();
+      const cloudProjects = rows.map(fromRow).filter((p): p is Project => p !== null);
+      setProjects((prev) => mergeProjects(prev, cloudProjects));
+    } catch {
+      // 拉取失败：保持本地数据，后续变更仍会尝试上传
+    }
+  }, []);
+
+  // 启动时检查登录状态（三态：loading / authenticated / anonymous）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = await cloudMe();
+        if (cancelled) return;
+        if (user) {
+          setAuthState('authenticated');
+          void loadCloud();
+        } else {
+          setAuthState('anonymous');
+        }
+      } catch {
+        if (!cancelled) setAuthState('anonymous');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadCloud]);
+
+  // 已登录时：项目变更防抖同步到云端（新建 → create 并回填 cloudId；已有 → update）
+  useEffect(() => {
+    if (authState !== 'authenticated') return;
+    const t = window.setTimeout(async () => {
+      const dirty = projectsRef.current.filter((p) => lastSyncedRef.current[p.id] !== JSON.stringify(toPayload(p)));
+      if (dirty.length === 0) return;
+      setSyncing(true);
+      for (const p of dirty) {
+        const payload = toPayload(p);
+        try {
+          if (p.cloudId) {
+            await cloudUpdate(p.cloudId, payload);
+          } else {
+            const created = await cloudCreate(payload);
+            if (created?.id) {
+              setProjects((prev) => prev.map((x) => (x.id === p.id ? { ...x, cloudId: created.id } : x)));
+            }
+          }
+          lastSyncedRef.current[p.id] = JSON.stringify(payload);
+        } catch {
+          // 单条失败：不记录签名，下次变更自动重试
+        }
+      }
+      setSyncing(false);
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [projects, authState]);
 
   // 构建中：定时刷新派生状态（building -> done）
   useEffect(() => {
@@ -244,6 +392,25 @@ export function useProjects() {
   const openProject = useCallback((id: string) => {
     setUi({ mode: 'edit', currentProjectId: id });
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, updatedAt: Date.now() } : p)));
+  }, []);
+
+  /** 删除项目：本地移除 + 云端删除（已同步时）；若删的是当前项目则自动切换 */
+  const deleteProject = useCallback((id: string) => {
+    const target = projectsRef.current.find((p) => p.id === id);
+    if (target?.cloudId) {
+      cloudDelete(target.cloudId).catch(() => {
+        // 云端删除失败：本地已移除，下次登录合并时仍会出现在云端，可再删
+      });
+    }
+    delete lastSyncedRef.current[id];
+    const next = projectsRef.current.filter((p) => p.id !== id);
+    setProjects(next);
+    setUi((prev) => {
+      if (prev.currentProjectId !== id) return prev;
+      if (next.length === 0) return { mode: 'create', currentProjectId: null };
+      const newest = [...next].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      return { mode: 'edit', currentProjectId: newest.id };
+    });
   }, []);
 
   /** 返回创建页：保留已有项目 */
@@ -313,7 +480,27 @@ export function useProjects() {
     );
   }, []);
 
+  /** 触发平台登录：登录后页面重载并自动拉取云端项目 */
+  const loginToCloud = useCallback(() => {
+    cloudLogin();
+  }, []);
+
   const activeProject = projects.find((p) => p.id === ui.currentProjectId) ?? null;
 
-  return { projects, ui, activeProject, createProject, openProject, goCreate, addRevision, regenerate, regeneratingId, setActiveVersion };
+  return {
+    projects,
+    ui,
+    activeProject,
+    authState,
+    syncing,
+    createProject,
+    openProject,
+    goCreate,
+    addRevision,
+    regenerate,
+    regeneratingId,
+    setActiveVersion,
+    deleteProject,
+    loginToCloud,
+  };
 }
