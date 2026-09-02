@@ -31,10 +31,18 @@ export interface CloudPayload {
   client_updated_at: number;
 }
 
+/** 平台用户档案（client.auth.me() 返回） */
+export interface CloudUser {
+  id: string;
+  email?: string;
+  name?: string | null;
+  role?: string;
+}
+
 /** 查询当前登录用户（未登录时返回 null） */
-export async function cloudMe(): Promise<unknown> {
+export async function cloudMe(): Promise<CloudUser | null> {
   const res = await client.auth.me();
-  return res?.data ?? null;
+  return (res?.data ?? null) as CloudUser | null;
 }
 
 /** 拉取当前用户的全部云端项目 */
@@ -66,4 +74,9 @@ export async function cloudDelete(id: number): Promise<void> {
 /** 触发平台登录（登录后回跳 /auth/callback） */
 export function cloudLogin(): void {
   client.auth.toLogin();
+}
+
+/** 退出平台登录（清除会话；本地项目缓存保留） */
+export async function cloudLogout(): Promise<void> {
+  await client.auth.logout();
 }

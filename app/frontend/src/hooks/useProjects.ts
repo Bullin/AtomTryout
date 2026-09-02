@@ -5,10 +5,12 @@ import {
   cloudDelete,
   cloudList,
   cloudLogin,
+  cloudLogout,
   cloudMe,
   cloudUpdate,
   type CloudPayload,
   type CloudRow,
+  type CloudUser,
 } from '@/lib/cloudSync';
 
 export type AppType = 'habit' | 'todo' | 'pomodoro' | 'custom';
@@ -256,6 +258,7 @@ export function useProjects() {
   const [ui, setUi] = useState<UiState>(initial.ui);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>('loading');
+  const [user, setUser] = useState<CloudUser | null>(null);
   const [syncing, setSyncing] = useState(false);
 
   const projectsRef = useRef(projects);
@@ -302,16 +305,21 @@ export function useProjects() {
     let cancelled = false;
     (async () => {
       try {
-        const user = await cloudMe();
+        const u = await cloudMe();
         if (cancelled) return;
-        if (user) {
+        if (u) {
+          setUser(u);
           setAuthState('authenticated');
           void loadCloud();
         } else {
+          setUser(null);
           setAuthState('anonymous');
         }
       } catch {
-        if (!cancelled) setAuthState('anonymous');
+        if (!cancelled) {
+          setUser(null);
+          setAuthState('anonymous');
+        }
       }
     })();
     return () => {
@@ -485,6 +493,13 @@ export function useProjects() {
     cloudLogin();
   }, []);
 
+  /** 退出登录：清除会话状态并调用平台登出（本地项目缓存保留） */
+  const logout = useCallback(() => {
+    setUser(null);
+    setAuthState('anonymous');
+    void cloudLogout();
+  }, []);
+
   const activeProject = projects.find((p) => p.id === ui.currentProjectId) ?? null;
 
   return {
@@ -492,6 +507,7 @@ export function useProjects() {
     ui,
     activeProject,
     authState,
+    user,
     syncing,
     createProject,
     openProject,
@@ -502,5 +518,6 @@ export function useProjects() {
     setActiveVersion,
     deleteProject,
     loginToCloud,
+    logout,
   };
 }

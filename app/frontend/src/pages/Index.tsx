@@ -19,6 +19,7 @@ export default function Workbench() {
     ui,
     activeProject,
     authState,
+    user,
     syncing,
     createProject,
     openProject,
@@ -28,6 +29,7 @@ export default function Workbench() {
     setActiveVersion,
     deleteProject,
     loginToCloud,
+    logout,
   } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
@@ -37,6 +39,7 @@ export default function Workbench() {
       <CreatePage
         projects={projects}
         authState={authState}
+        user={user}
         syncing={syncing}
         onCreate={createProject}
         onOpen={openProject}
@@ -45,6 +48,7 @@ export default function Workbench() {
           toast('项目已删除', { description: authState === 'authenticated' ? '云端记录同步删除' : undefined });
         }}
         onLogin={loginToCloud}
+        onLogout={logout}
       />
     );
   }
@@ -75,12 +79,14 @@ export default function Workbench() {
         projects={projects}
         activeProject={activeProject}
         authState={authState}
+        user={user}
         syncing={syncing}
         onSelectProject={openProject}
         onDeleteProject={handleDelete}
         onNewApp={handleNewApp}
         onSettings={handleSettings}
         onLogin={loginToCloud}
+        onLogout={logout}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">

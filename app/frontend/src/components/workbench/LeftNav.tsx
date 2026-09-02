@@ -8,24 +8,29 @@ import {
   ListTodo,
   Loader2,
   LogIn,
+  LogOut,
   Plus,
   Settings,
   Timer,
   Trash2,
+  UserRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { APP_META, type AppType, type AuthState, type Project } from '@/hooks/useProjects';
+import type { CloudUser } from '@/lib/cloudSync';
 
 interface LeftNavProps {
   projects: Project[];
   activeProject: Project | null;
   authState: AuthState;
+  user: CloudUser | null;
   syncing: boolean;
   onSelectProject: (id: string) => void;
   onDeleteProject: (id: string) => void;
   onNewApp: () => void;
   onSettings: () => void;
   onLogin: () => void;
+  onLogout: () => void;
   className?: string;
 }
 
@@ -113,12 +118,14 @@ export default function LeftNav({
   projects,
   activeProject,
   authState,
+  user,
   syncing,
   onSelectProject,
   onDeleteProject,
   onNewApp,
   onSettings,
   onLogin,
+  onLogout,
   className,
 }: LeftNavProps) {
   const recent = projects
@@ -172,17 +179,36 @@ export default function LeftNav({
         )}
       </div>
 
-      {/* 底部：云端同步状态 + 设置 */}
+      {/* 底部：登录状态（三态）+ 退出 + 设置 */}
       <div className="mt-auto border-t px-3 py-2">
         {authState === 'authenticated' ? (
-          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-            {syncing ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : <Cloud className="h-3.5 w-3.5 shrink-0 text-primary" />}
-            <span>{syncing ? '正在同步到云端…' : '已登录 · 项目已云端保存'}</span>
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" title={user?.email ?? '已登录'}>
+              <UserRound className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-foreground" title={user?.name || user?.email || '已登录'}>
+                {user?.name || user?.email || '已登录'}
+              </span>
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                {syncing ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" /> : <Cloud className="h-3 w-3 shrink-0 text-primary" />}
+                {syncing ? '正在同步到云端…' : '已登录 · 云端保存中'}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={onLogout}
+              aria-label="退出登录"
+              title="退出登录"
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
           </div>
         ) : authState === 'loading' ? (
-          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-            <span>检查登录状态…</span>
+            <span>正在检查登录状态…</span>
           </div>
         ) : (
           <button
@@ -194,6 +220,7 @@ export default function LeftNav({
             <CloudOff className="h-3.5 w-3.5 shrink-0" />
             <span className="flex-1">未登录 · 仅本地保存</span>
             <LogIn className="h-3.5 w-3.5 shrink-0" />
+            <span className="shrink-0 font-medium text-primary">登录</span>
           </button>
         )}
         <button

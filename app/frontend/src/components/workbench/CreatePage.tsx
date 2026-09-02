@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { AlertCircle, Atom, Check, Clock3, Cloud, CloudOff, Inbox, Loader2, LogIn, Sparkles, Trash2 } from 'lucide-react';
+import { AlertCircle, Atom, Check, Clock3, Cloud, CloudOff, Inbox, Loader2, LogIn, LogOut, Sparkles, Trash2, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatTime, type AuthState, type Project } from '@/hooks/useProjects';
+import type { CloudUser } from '@/lib/cloudSync';
 
 interface CreatePageProps {
   projects: Project[];
   authState: AuthState;
+  user: CloudUser | null;
   syncing: boolean;
   onCreate: (requirement: string) => { ok: true; id: string } | { ok: false; error: string };
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onLogin: () => void;
+  onLogout: () => void;
 }
 
 const EXAMPLES = [
@@ -81,7 +84,7 @@ function RecentItem({ project, onOpen, onDelete }: { project: Project; onOpen: (
 }
 
 /** 无项目时的创建页：品牌标识 + 主标题 + 大输入框 + 示例需求 + 最近项目（可删除） */
-export default function CreatePage({ projects, authState, syncing, onCreate, onOpen, onDelete, onLogin }: CreatePageProps) {
+export default function CreatePage({ projects, authState, user, syncing, onCreate, onOpen, onDelete, onLogin, onLogout }: CreatePageProps) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recent = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -111,11 +114,37 @@ export default function CreatePage({ projects, authState, syncing, onCreate, onO
             </div>
           </div>
           {authState === 'authenticated' ? (
-            <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary ring-1 ring-inset ring-primary/25">
-              {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Cloud className="h-3 w-3" />}
-              {syncing ? '同步中' : '云端已保存'}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary ring-1 ring-inset ring-primary/25">
+                <UserRound className="h-3 w-3" aria-hidden />
+                <span className="max-w-[120px] truncate" title={user?.name || user?.email || '已登录'}>
+                  {user?.name || user?.email || '已登录'}
+                </span>
+                <span className="h-3 w-px bg-primary/30" aria-hidden />
+                {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Cloud className="h-3 w-3" />}
+                {syncing ? '同步中' : '云端已保存'}
+              </span>
+              <button
+                type="button"
+                onClick={onLogout}
+                aria-label="退出登录"
+                title="退出登录"
+                className="flex shrink-0 items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive"
+              >
+                <LogOut className="h-3 w-3" />
+                退出
+              </button>
+            </div>
+          ) : authState === 'loading' ? (
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              正在检查登录状态…
             </span>
-          ) : authState === 'anonymous' ? (
+          ) : (
             <button
               type="button"
               onClick={onLogin}
@@ -123,10 +152,11 @@ export default function CreatePage({ projects, authState, syncing, onCreate, onO
               title="登录后项目将自动保存到云端"
             >
               <CloudOff className="h-3 w-3" />
-              登录云端保存
+              未登录 · 仅本地保存
               <LogIn className="h-3 w-3" />
+              <span className="font-semibold text-primary">登录</span>
             </button>
-          ) : null}
+          )}
         </div>
 
         {/* 主标题 */}
