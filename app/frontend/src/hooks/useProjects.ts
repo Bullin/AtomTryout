@@ -89,9 +89,11 @@ export function deriveProjectName(text: string): string {
     .replace(/^(请|帮我|我想|我要|来)?(创建|生成|做|开发|设计|搭建)(一个|一款|个)?/, '')
     .trim();
   t = t.split(/[，,。.!！?？;；]/)[0].trim();
-  t = t.replace(/(应用|小程序|网站|工具|app)$/i, '').trim();
-  if (!t) return '我的应用';
-  return t.length > 12 ? t.slice(0, 12) : t;
+  const stripped = t.replace(/(应用|小程序|网站|工具|app)$/i, '').trim();
+  if (!stripped) return '我的应用';
+  // 去掉后缀后只剩纯数字（如“2028”）时保留原词，命名更友好
+  const keep = /^\d+$/.test(stripped) ? t : stripped;
+  return keep.length > 12 ? keep.slice(0, 12) : keep;
 }
 
 export const APP_META: Record<AppType, { name: string; label: string; file: string }> = {
@@ -135,35 +137,14 @@ function normalize(p: Project): Project {
   return q;
 }
 
-/** 仅开发预览环境：无历史数据时种入一个示例项目，便于直接查看工作台（生产构建不受影响） */
-function seedDemoProjects(): Project[] {
-  const now = Date.now();
-  const spec = '创建一个每日进步习惯打卡应用';
-  const name = deriveProjectName(spec);
-  return [
-    {
-      id: 'p-demo-daily',
-      name,
-      requirement: spec,
-      appType: inferAppType(spec),
-      status: 'done',
-      buildingAt: now - 5000,
-      revisions: [],
-      createdAt: now - 60000,
-      updatedAt: now - 5000,
-      versions: [makeVersion(1, spec, name, now - 5000)],
-      activeVer: 1,
-    },
-  ];
-}
-
 function loadProjects(): Project[] {
   try {
     const raw = localStorage.getItem(PROJECTS_KEY);
-    if (!raw) return import.meta.env.DEV ? seedDemoProjects() : [];
+    if (!raw) return [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
-    return arr.map(normalize);
+    // 清理历史遗留的开发示例项目，避免污染“最近项目”
+    return arr.map(normalize).filter((p) => p.id !== 'p-demo-daily');
   } catch {
     return [];
   }
