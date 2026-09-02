@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import HabitApp from './HabitApp';
-import { TodoApp, PomodoroApp } from './MiniApps';
+import { TodoApp, PomodoroApp, CustomApp } from './MiniApps';
 import { APP_META, appStorageKey, BUILD_MS, type Project } from '@/hooks/useProjects';
 
 interface PreviewWorkspaceProps {
@@ -87,6 +87,27 @@ export function PomodoroApp({ projectId }) {
   // 归零时：计数 +1 并持久化
   if (left === 0) setStats((p) => ({ sessions: p.sessions + 1 }));
 }`,
+  custom: `// 自定义应用（节选）：由需求直接命名的可运行记录工具
+export function CustomApp({ projectId, appName, requirement }) {
+  const [items, setItems] = usePersisted(
+    \`atom-taste-custom-\${projectId}\`, []);
+
+  const add = (text) =>
+    setItems((prev) => [...prev, { id: uid(), text, done: false }]);
+
+  const toggle = (id) =>
+    setItems((prev) => prev.map((x) =>
+      x.id === id ? { ...x, done: !x.done } : x));
+
+  return (
+    <section>
+      <h1>{appName}</h1>
+      <p>来自需求：{requirement}</p>
+      <AddBar onAdd={add} />
+      <ItemList items={items} onToggle={toggle} />
+    </section>
+  );
+}`,
 };
 
 /** 读取当前项目的应用数据，用于导出快照 */
@@ -101,6 +122,11 @@ function readAppSnapshot(project: Project): { title: string; rows: string[] } {
       const raw = localStorage.getItem(appStorageKey('todo', project.id));
       const list: { text: string; done: boolean }[] = raw ? JSON.parse(raw) : [];
       return { title: '待办清单', rows: list.map((t) => `${t.done ? '☑' : '☐'} ${t.text}`) };
+    }
+    if (project.appType === 'custom') {
+      const raw = localStorage.getItem(appStorageKey('custom', project.id));
+      const list: { text: string; done: boolean }[] = raw ? JSON.parse(raw) : [];
+      return { title: project.name, rows: list.map((t) => `${t.done ? '☑' : '☐'} ${t.text}`) };
     }
     const raw = localStorage.getItem(appStorageKey('habit', project.id));
     const parsed = raw ? JSON.parse(raw) : null;
@@ -431,5 +457,8 @@ ${rows.map((r) => `<li>${r}</li>`).join('\n') || '<li>暂无数据</li>'}
 function AppRenderer({ project }: { project: Project }) {
   if (project.appType === 'todo') return <TodoApp projectId={project.id} />;
   if (project.appType === 'pomodoro') return <PomodoroApp projectId={project.id} />;
+  if (project.appType === 'custom') {
+    return <CustomApp projectId={project.id} appName={project.name} requirement={project.requirement} />;
+  }
   return <HabitApp projectId={project.id} />;
 }

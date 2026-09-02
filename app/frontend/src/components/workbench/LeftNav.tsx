@@ -1,4 +1,4 @@
-import { Atom, CalendarCheck, ListTodo, Plus, Settings, Timer } from 'lucide-react';
+import { Atom, CalendarCheck, LayoutTemplate, ListTodo, Plus, Settings, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { APP_META, type AppType, type Project } from '@/hooks/useProjects';
 
@@ -15,6 +15,7 @@ const TYPE_ICON: Record<AppType, typeof CalendarCheck> = {
   habit: CalendarCheck,
   todo: ListTodo,
   pomodoro: Timer,
+  custom: LayoutTemplate,
 };
 
 /** 左侧窄导航栏：产品名称、新建应用、当前项目、最近项目（真实数据）、设置入口 */

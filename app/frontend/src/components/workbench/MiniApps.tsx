@@ -264,3 +264,137 @@ export function PomodoroApp({ projectId }: { projectId: string }) {
     </div>
   );
 }
+
+interface CustomItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/** 生成应用之一：自定义应用（未命中预置类型时，按需求名称生成的可运行记录工具） */
+export function CustomApp({
+  projectId,
+  appName,
+  requirement,
+}: {
+  projectId: string;
+  appName: string;
+  requirement: string;
+}) {
+  const key = appStorageKey('custom', projectId);
+  const [items, setItems] = usePersisted<CustomItem[]>(key, () => []);
+  const [draft, setDraft] = useState('');
+  const doneCount = items.filter((i) => i.done).length;
+  const total = items.length;
+  const progress = total === 0 ? 0 : Math.round((doneCount / total) * 100);
+
+  const handleAdd = () => {
+    const text = draft.trim();
+    if (!text) {
+      toast.warning('请输入内容');
+      return;
+    }
+    setItems((prev) => [...prev, { id: `c-${Date.now()}`, text, done: false }]);
+    setDraft('');
+    toast.success('已添加');
+  };
+
+  const handleToggle = (it: CustomItem) => {
+    setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, done: !x.done } : x)));
+  };
+
+  const handleRemove = (it: CustomItem) => {
+    setItems((prev) => prev.filter((x) => x.id !== it.id));
+    toast(`已删除「${it.text}」`);
+  };
+
+  return (
+    <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-background px-5 py-6 sm:px-8">
+      <header className="mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-lg font-bold tracking-tight text-foreground">{appName}</h1>
+          <span className="text-xs tabular-nums text-muted-foreground">{todayLabel()}</span>
+        </div>
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">来自需求：{requirement}</p>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-sm font-medium tabular-nums text-foreground">
+            已完成 <span className="text-primary">{doneCount}</span>/{total}
+          </span>
+        </div>
+      </header>
+
+      <div className="mb-4 flex items-center gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleAdd();
+          }}
+          placeholder={`添加与「${appName}」相关的内容`}
+          className="h-9 flex-1 rounded-md border border-input bg-card px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="h-9 shrink-0 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-[0.98]"
+        >
+          添加
+        </button>
+      </div>
+
+      {total === 0 ? (
+        <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
+          还没有记录，先添加第一条与「{appName}」相关的内容吧
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((it) => (
+            <li
+              key={it.id}
+              className={cn(
+                'flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 transition-colors duration-150',
+                it.done && 'border-primary/30 bg-primary/5',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => handleToggle(it)}
+                aria-label={it.done ? '取消完成' : '标记完成'}
+                className={cn(
+                  'flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-all duration-150 active:scale-95',
+                  it.done
+                    ? 'bg-primary text-primary-foreground hover:md:bg-primary/90'
+                    : 'border border-input bg-background text-foreground hover:md:border-primary/40 hover:md:bg-primary/5 hover:md:text-primary',
+                )}
+              >
+                {it.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                {it.done ? '已完成' : '完成'}
+              </button>
+              <p className={cn('min-w-0 flex-1 truncate text-sm font-medium', it.done && 'text-muted-foreground line-through')}>
+                {it.text}
+              </p>
+              <button
+                type="button"
+                onClick={() => handleRemove(it)}
+                aria-label={`删除 ${it.text}`}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:md:bg-destructive/10 hover:md:text-destructive active:scale-95"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <footer className="mt-auto pt-6 text-center text-[11px] text-muted-foreground">
+        数据保存在本地浏览器，刷新后依然存在
+      </footer>
+    </div>
+  );
+}

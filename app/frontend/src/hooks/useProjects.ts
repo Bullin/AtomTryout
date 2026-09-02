@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-export type AppType = 'habit' | 'todo' | 'pomodoro';
+export type AppType = 'habit' | 'todo' | 'pomodoro' | 'custom';
 export type ProjectStatus = 'building' | 'done';
 
 export interface Revision {
@@ -32,21 +32,36 @@ export const BUILD_MS = 2200;
 export function appStorageKey(type: AppType, projectId: string): string {
   if (type === 'todo') return `atom-taste-todo-${projectId}`;
   if (type === 'pomodoro') return `atom-taste-pomo-${projectId}`;
+  if (type === 'custom') return `atom-taste-custom-${projectId}`;
   return `atom-taste-habits-${projectId}`;
 }
 
-/** 规则式需求解析（本地关键词匹配，非真实 AI） */
+/** 规则式需求解析（本地关键词匹配，非真实 AI）：未命中任何类型时生成自定义应用，不再默认习惯打卡 */
 export function inferAppType(text: string): AppType {
   const t = text.toLowerCase();
+  if (/习惯|打卡|habit/.test(t)) return 'habit';
   if (/待办|清单|todo|task|任务/.test(t)) return 'todo';
   if (/番茄|计时|专注|倒计时|pomodoro|timer/.test(t)) return 'pomodoro';
-  return 'habit';
+  return 'custom';
+}
+
+/** 从需求文本中提取应用名称，使项目与需求对应（如“创建一个记账应用”→“记账”） */
+export function deriveProjectName(text: string): string {
+  let t = text
+    .trim()
+    .replace(/^(请|帮我|我想|我要|来)?(创建|生成|做|开发|设计|搭建)(一个|一款|个)?/, '')
+    .trim();
+  t = t.split(/[，,。.!！?？;；]/)[0].trim();
+  t = t.replace(/(应用|小程序|网站|工具|app)$/i, '').trim();
+  if (!t) return '我的应用';
+  return t.length > 12 ? t.slice(0, 12) : t;
 }
 
 export const APP_META: Record<AppType, { name: string; label: string; file: string }> = {
   habit: { name: '习惯打卡', label: '习惯打卡应用', file: 'src/app/daily-progress.tsx' },
   todo: { name: '待办清单', label: '待办清单应用', file: 'src/app/todo-list.tsx' },
   pomodoro: { name: '番茄专注', label: '番茄专注计时应用', file: 'src/app/pomodoro.tsx' },
+  custom: { name: '自定义应用', label: '自定义应用', file: 'src/app/custom-app.tsx' },
 };
 
 export function formatTime(ts: number): string {
@@ -147,7 +162,7 @@ export function useProjects() {
       const now = Date.now();
       const project: Project = {
         id,
-        name: APP_META[appType].name,
+        name: deriveProjectName(text),
         requirement: text,
         appType,
         status: 'building',
