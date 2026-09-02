@@ -1,0 +1,150 @@
+import { useState } from 'react';
+import { AlertCircle, Atom, Clock3, Inbox, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatTime, type Project } from '@/hooks/useProjects';
+
+interface CreatePageProps {
+  projects: Project[];
+  onCreate: (requirement: string) => { ok: true; id: string } | { ok: false; error: string };
+  onOpen: (id: string) => void;
+}
+
+const EXAMPLES = [
+  '创建一个习惯打卡应用，记录每天阅读、运动和喝水',
+  '创建一个待办清单应用，支持添加、完成和删除任务',
+  '创建一个番茄专注计时器，帮助我专注工作 25 分钟',
+];
+
+/** 无项目时的创建页：品牌标识 + 主标题 + 大输入框 + 示例需求 + 最近项目 */
+export default function CreatePage({ projects, onCreate, onOpen }: CreatePageProps) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const recent = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const submit = () => {
+    const r = onCreate(text);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setError(null);
+    toast.success('项目已创建', { description: 'AI 正在生成应用，请稍候' });
+  };
+
+  return (
+    <div className="flex h-screen w-full justify-center overflow-y-auto bg-background">
+      <main className="flex w-full max-w-[640px] flex-col px-6 py-12 sm:py-16">
+        {/* 品牌标识 */}
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Atom className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold leading-none tracking-tight">Atom 尝鲜</p>
+            <p className="mt-1 text-xs text-muted-foreground">描述想法，即刻生成可运行的应用</p>
+          </div>
+        </div>
+
+        {/* 主标题 */}
+        <h1 className="mt-10 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          你的下一个想法，从这里开始
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          用一句话描述你想要的产品，Atom 会在编辑器里为你生成一个可以立即使用的真实应用。
+        </p>
+
+        {/* 大输入框 */}
+        <div className="mt-6">
+          <textarea
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+            }}
+            rows={5}
+            placeholder="描述你想创建的应用，例如：创建一个习惯打卡应用"
+            className="w-full resize-none rounded-lg border border-input bg-card px-4 py-3 text-sm leading-relaxed shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+          {error && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {error}
+            </p>
+          )}
+        </div>
+
+        {/* 主按钮 */}
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={submit}
+            className="flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-[0.98]"
+          >
+            <Sparkles className="h-4 w-4" />
+            开始创建
+          </button>
+          <span className="text-xs text-muted-foreground">Ctrl / ⌘ + Enter 快速创建</span>
+        </div>
+
+        {/* 示例需求 */}
+        <div className="mt-6">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">试试这些示例</p>
+          <div className="flex flex-col gap-2">
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                type="button"
+                onClick={() => {
+                  setText(ex);
+                  setError(null);
+                }}
+                className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors duration-150 hover:md:border-primary/40 hover:md:bg-primary/5 active:scale-[0.99]"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="truncate">{ex}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 最近项目 */}
+        <div className="mt-10">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Clock3 className="h-3 w-3" />
+            最近项目
+          </p>
+          {recent.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center">
+              <Inbox className="h-5 w-5 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">还没有项目，从上方描述你的第一个想法</p>
+            </div>
+          ) : (
+            <ul className="divide-y rounded-lg border bg-card">
+              {recent.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(p.id)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:md:bg-accent"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                      <Atom className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{p.requirement}</span>
+                    </span>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatTime(p.updatedAt)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

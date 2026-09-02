@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { appStorageKey } from './useProjects';
 
 export type HabitIconKey = 'book' | 'dumbbell' | 'droplet' | 'moon' | 'sparkles' | 'target' | 'sun';
 
@@ -14,8 +15,6 @@ interface PersistShape {
   date: string;
   habits: Habit[];
 }
-
-const STORAGE_KEY = 'atom-taste-habits-v1';
 
 /** 当天日期键，用于跨天自动重置完成状态 */
 function todayKey(): string {
@@ -34,9 +33,9 @@ function seedHabits(): Habit[] {
   ];
 }
 
-function loadHabits(): Habit[] {
+function loadHabits(projectId: string): Habit[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(appStorageKey('habit', projectId));
     if (!raw) return seedHabits();
     const parsed = JSON.parse(raw) as PersistShape;
     if (!parsed || !Array.isArray(parsed.habits)) return seedHabits();
@@ -50,18 +49,18 @@ function loadHabits(): Habit[] {
   }
 }
 
-/** 习惯打卡应用的状态管理 + localStorage 持久化 */
-export function useHabits() {
-  const [habits, setHabits] = useState<Habit[]>(() => loadHabits());
+/** 习惯打卡应用的状态管理 + 按项目隔离的 localStorage 持久化 */
+export function useHabits(projectId: string) {
+  const [habits, setHabits] = useState<Habit[]>(() => loadHabits(projectId));
 
   useEffect(() => {
     try {
       const payload: PersistShape = { date: todayKey(), habits };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(appStorageKey('habit', projectId), JSON.stringify(payload));
     } catch {
       // 存储不可用时静默降级，不影响交互
     }
-  }, [habits]);
+  }, [habits, projectId]);
 
   const addHabit = useCallback((name: string) => {
     const trimmed = name.trim();

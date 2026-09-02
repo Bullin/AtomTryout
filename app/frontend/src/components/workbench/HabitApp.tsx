@@ -35,9 +35,9 @@ function todayLabel(): string {
   });
 }
 
-/** 预览区内嵌的独立应用「每日进步」：真实可交互，localStorage 持久化 */
-export default function HabitApp() {
-  const { habits, addHabit, toggleHabit, removeHabit, doneCount, total, progress } = useHabits();
+/** 生成应用之一：每日进步 · 习惯打卡（真实可交互，按项目隔离持久化） */
+export default function HabitApp({ projectId }: { projectId: string }) {
+  const { habits, addHabit, toggleHabit, removeHabit, doneCount, total, progress } = useHabits(projectId);
   const [draft, setDraft] = useState('');
   const dateStr = useMemo(() => todayLabel(), []);
   const allDone = total > 0 && doneCount === total;
@@ -63,7 +63,6 @@ export default function HabitApp() {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-background px-5 py-6 sm:px-8">
-      {/* 应用头部 */}
       <header className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-lg font-bold tracking-tight text-foreground">每日进步</h1>
@@ -88,7 +87,6 @@ export default function HabitApp() {
         )}
       </header>
 
-      {/* 新增习惯 */}
       <div className="mb-4 flex items-center gap-2">
         <input
           value={draft}
@@ -109,7 +107,6 @@ export default function HabitApp() {
         </button>
       </div>
 
-      {/* 习惯列表 */}
       {total === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
           <Target className="h-6 w-6 text-muted-foreground" />

@@ -4,23 +4,26 @@ import { cn } from '@/lib/utils';
 import LeftNav from '@/components/workbench/LeftNav';
 import RequirementPanel from '@/components/workbench/RequirementPanel';
 import PreviewWorkspace from '@/components/workbench/PreviewWorkspace';
+import CreatePage from '@/components/workbench/CreatePage';
+import { useProjects } from '@/hooks/useProjects';
 
-const CURRENT_PROJECT = '习惯打卡';
-
-/** 全屏 AI 应用编辑器工作台：左导航（始终展示） + 中需求面板 + 右预览区 */
+/**
+ * 应用入口：根据项目状态在「创建页」与「编辑工作台」之间切换。
+ * - 无项目（localStorage 为空）：显示创建页
+ * - 已有项目：直接进入最近打开的三栏编辑工作台（导航常驻，小屏可切换需求/预览）
+ */
 export default function Workbench() {
-  const [activeProject, setActiveProject] = useState(CURRENT_PROJECT);
+  const { projects, ui, activeProject, createProject, openProject, goCreate, addRevision } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
-  const status: 'done' | 'draft' = activeProject === CURRENT_PROJECT ? 'done' : 'draft';
-
-  const handleSelectProject = (name: string) => {
-    setActiveProject(name);
-    if (name !== activeProject) toast(`已切换到项目「${name}」`);
-  };
+  // 创建页：没有项目，或用户主动点击「新建应用」返回
+  if (ui.mode !== 'edit' || !activeProject) {
+    return <CreatePage projects={projects} onCreate={createProject} onOpen={openProject} />;
+  }
 
   const handleNewApp = () => {
-    toast.info('已新建空白应用', { description: '在需求面板描述你的想法，AI 将为你生成' });
+    goCreate();
+    toast('已返回创建页', { description: '已有项目已保留，可从最近项目随时返回' });
   };
 
   const handleSettings = () => {
@@ -31,8 +34,9 @@ export default function Workbench() {
     <div className="flex h-screen w-full overflow-hidden bg-background text-sm">
       {/* 左侧导航栏：任何屏幕尺寸下都保持展示，不收起 */}
       <LeftNav
+        projects={projects}
         activeProject={activeProject}
-        onSelectProject={handleSelectProject}
+        onSelectProject={openProject}
         onNewApp={handleNewApp}
         onSettings={handleSettings}
       />
@@ -41,7 +45,7 @@ export default function Workbench() {
         {/* 小屏顶栏：仅做需求/预览切换，导航栏常驻可见 */}
         <header className="flex h-11 shrink-0 items-center gap-2 border-b bg-card px-3 md:hidden">
           <span className="truncate text-xs font-medium text-muted-foreground">
-            当前项目 · {activeProject}
+            当前项目 · {activeProject.name}
           </span>
           <div
             className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md bg-secondary p-0.5"
@@ -75,15 +79,15 @@ export default function Workbench() {
           </div>
         </header>
 
-        {/* 三栏主体 */}
+        {/* 三栏主体：沿用既有工作台布局与视觉 */}
         <div className="flex min-h-0 flex-1">
           <RequirementPanel
-            projectName={activeProject}
-            status={status}
+            project={activeProject}
+            onSend={(text) => addRevision(activeProject.id, text)}
             className={cn('hidden md:flex', view === 'requirements' && 'flex w-full md:w-[340px]')}
           />
           <PreviewWorkspace
-            projectName={activeProject}
+            project={activeProject}
             className={cn(view === 'requirements' ? 'hidden md:flex' : 'flex')}
           />
         </div>
