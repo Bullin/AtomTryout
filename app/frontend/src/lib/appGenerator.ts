@@ -6,7 +6,12 @@
  */
 
 export interface GenResult {
+  /** 完整可独立运行的 HTML 文档 */
   html: string;
+  /** 样式部分（styles.css） */
+  css: string;
+  /** 脚本部分（app.js） */
+  js: string;
   kind: string;
   label: string;
   unsupported: boolean;
@@ -59,17 +64,24 @@ function sanitizeKey(name: string): string {
   return `atom-gen-${s || 'app'}`;
 }
 
-function wrap(title: string, sub: string, body: string, script: string): string {
-  return (
+function wrap(title: string, sub: string, body: string, script: string): { html: string; css: string; js: string } {
+  const html =
     '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8" />' +
     '<meta name="viewport" content="width=device-width, initial-scale=1.0" />' +
     '<title>' + esc(title) + '</title><style>' + CSS + '</style></head><body>' +
     '<h1>' + esc(title) + '</h1><p class="sub">' + esc(sub) + '</p>' +
-    body + '<scr' + 'ipt>' + script + '</scr' + 'ipt></body></html>'
-  );
+    body + '<scr' + 'ipt>' + script + '</scr' + 'ipt></body></html>';
+  return { html, css: CSS.trim(), js: script.trim() };
 }
 
-const LIST_JS = (key: string, placeholder: string) => `
+/** 从完整 HTML 中拆出 css / js（用于兼容旧数据） */
+export function extractParts(html: string): { css: string; js: string } {
+  const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+  const js = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+  return { css: css.trim(), js: js.trim() };
+}
+
+const LIST_JS = (key: string) => `
 var KEY='${key}';
 var items=JSON.parse(localStorage.getItem(KEY)||'[]');
 function save(){localStorage.setItem(KEY,JSON.stringify(items));}
@@ -102,7 +114,8 @@ function buildTodo(name: string): GenResult {
   const body =
     '<div class="row"><input id="inp" class="grow" placeholder="输入一条待办" /><button id="add">添加</button></div>' +
     '<p class="chip" id="cnt"></p><ul id="list"></ul>';
-  return { html: wrap(name, '待办清单 · 数据保存在本地浏览器', body, LIST_JS(key, '待办')), kind: 'todo', label: '待办清单', unsupported: false };
+  const p = wrap(name, '待办清单 · 数据保存在本地浏览器', body, LIST_JS(key));
+  return { ...p, kind: 'todo', label: '待办清单', unsupported: false };
 }
 
 function buildHabit(name: string): GenResult {
@@ -110,7 +123,8 @@ function buildHabit(name: string): GenResult {
   const body =
     '<div class="row"><input id="inp" class="grow" placeholder="输入一个习惯，如：阅读 30 分钟" /><button id="add">添加</button></div>' +
     '<p class="chip" id="cnt"></p><ul id="list"></ul>';
-  return { html: wrap(name, '习惯打卡 · 勾选即完成今日打卡', body, LIST_JS(key, '习惯')), kind: 'habit', label: '习惯打卡', unsupported: false };
+  const p = wrap(name, '习惯打卡 · 勾选即完成今日打卡', body, LIST_JS(key));
+  return { ...p, kind: 'habit', label: '习惯打卡', unsupported: false };
 }
 
 function buildGeneric(name: string, t: string): GenResult {
@@ -136,8 +150,9 @@ function render(){var ul=document.getElementById('list');
 document.getElementById('add').onclick=function(){var i=document.getElementById('inp');var a=document.getElementById('amt');var v=i.value.trim();if(!v)return;
  items.push({id:uid(),text:v,amt:a?a.value.trim():''});i.value='';if(a)a.value='';save();render();};
 render();`
-    : LIST_JS(key, '记录');
-  return { html: wrap(name, '自定义记录应用 · 数据保存在本地浏览器', body, script), kind: 'generic', label: '自定义应用', unsupported: false };
+    : LIST_JS(key);
+  const p = wrap(name, '自定义记录应用 · 数据保存在本地浏览器', body, script);
+  return { ...p, kind: 'generic', label: '自定义应用', unsupported: false };
 }
 
 function buildPomodoro(name: string): GenResult {
@@ -160,7 +175,8 @@ function start(){if(run){stop();return;}run=setInterval(function(){left--;if(lef
 btn.onclick=start;
 document.getElementById('reset').onclick=function(){stop();left=FOCUS;render();};
 render();`;
-  return { html: wrap(name, '番茄专注计时 · 数据保存在本地浏览器', body, script), kind: 'pomodoro', label: '番茄专注', unsupported: false };
+  const p = wrap(name, '番茄专注计时 · 数据保存在本地浏览器', body, script);
+  return { ...p, kind: 'pomodoro', label: '番茄专注', unsupported: false };
 }
 
 function buildCountdown(name: string): GenResult {
@@ -168,17 +184,18 @@ function buildCountdown(name: string): GenResult {
   const body =
     '<div class="card"><div class="big" id="time">05:00</div><p class="stat" id="msg" style="opacity:0;transition:opacity .4s;color:var(--pri);font-weight:600"></p></div>' +
     '<div class="row"><input id="mins" style="max-width:120px" type="number" min="1" value="5" placeholder="分钟" /><button id="start" class="grow">开始</button><button id="reset" class="ghost">重置</button></div>';
-  const script = `var KEY='${key}';var saved=parseInt(localStorage.getItem(KEY)||'300',10);var total=saved,left=saved,run=null;
+  const script = `var KEY='${key}';var saved=parseInt(localStorage.getItem(KEY)||'300',10);var left=saved,run=null;
 var el=document.getElementById('time'),btn=document.getElementById('start'),msg=document.getElementById('msg'),mi=document.getElementById('mins');
 function fmt(x){var m=Math.floor(x/60),s=x%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
 function render(){el.textContent=fmt(left);}
 function stop(){if(run){clearInterval(run);run=null;}btn.textContent='开始';}
-function start(){if(run){stop();return;}total=left;run=setInterval(function(){left--;if(left<=0){stop();render();msg.textContent='⏰ 时间到！';msg.style.opacity='1';setTimeout(function(){msg.style.opacity='0';},2500);}else render();},1000);btn.textContent='暂停';}
+function start(){if(run){stop();return;}run=setInterval(function(){left--;if(left<=0){stop();render();msg.textContent='⏰ 时间到！';msg.style.opacity='1';setTimeout(function(){msg.style.opacity='0';},2500);}else render();},1000);btn.textContent='暂停';}
 btn.onclick=start;
-document.getElementById('reset').onclick=function(){stop();var m=parseInt(mi.value,10)||5;left=m*60;total=left;localStorage.setItem(KEY,String(left));render();};
-mi.onchange=function(){var m=parseInt(mi.value,10)||5;left=m*60;total=left;localStorage.setItem(KEY,String(left));render();};
+document.getElementById('reset').onclick=function(){stop();var m=parseInt(mi.value,10)||5;left=m*60;localStorage.setItem(KEY,String(left));render();};
+mi.onchange=function(){var m=parseInt(mi.value,10)||5;left=m*60;localStorage.setItem(KEY,String(left));render();};
 render();`;
-  return { html: wrap(name, '倒计时 · 数据保存在本地浏览器', body, script), kind: 'countdown', label: '倒计时', unsupported: false };
+  const p = wrap(name, '倒计时 · 数据保存在本地浏览器', body, script);
+  return { ...p, kind: 'countdown', label: '倒计时', unsupported: false };
 }
 
 function buildAccounting(name: string): GenResult {
@@ -208,12 +225,12 @@ document.getElementById('add').onclick=function(){var n=document.getElementById(
  var amt=parseFloat(a.value);if(!amt||amt<=0){a.focus();return;}
  items.push({id:uid(),note:n.value.trim(),amt:amt,type:ty.value});n.value='';a.value='';save();render();};
 render();`;
-  return { html: wrap(name, '记账应用 · 数据保存在本地浏览器', body, script), kind: 'accounting', label: '记账', unsupported: false };
+  const p = wrap(name, '记账应用 · 数据保存在本地浏览器', body, script);
+  return { ...p, kind: 'accounting', label: '记账', unsupported: false };
 }
 
 function buildCalculator(name: string): GenResult {
-  const body =
-    '<div class="cal-disp" id="disp">0</div><div class="cal-grid" id="grid"></div>';
+  const body = '<div class="cal-disp" id="disp">0</div><div class="cal-grid" id="grid"></div>';
   const script = `var disp=document.getElementById('disp'),expr='';
 function show(){disp.textContent=expr||'0';}
 function calc(e){if(!/^[0-9+\\-*/(). ]+$/.test(e))return null;try{var r=Function('"use strict";return('+e+')')();return (typeof r==='number'&&isFinite(r))?String(Math.round(r*1e6)/1e6):null;}catch(x){return null;}}
@@ -229,7 +246,8 @@ keys.forEach(function(k){var b=document.createElement('button');b.textContent=k;
   expr+=k;show();};
  grid.appendChild(b);});
 show();`;
-  return { html: wrap(name, '计算器 · 浏览器内运行', body, script), kind: 'calculator', label: '计算器', unsupported: false };
+  const p = wrap(name, '计算器 · 浏览器内运行', body, script);
+  return { ...p, kind: 'calculator', label: '计算器', unsupported: false };
 }
 
 function buildVoting(name: string): GenResult {
@@ -256,7 +274,8 @@ document.getElementById('add').onclick=function(){var inp=document.getElementByI
  opts.push({id:uid(),label:v,count:0});inp.value='';save();render();};
 document.getElementById('reset').onclick=function(){opts.forEach(function(o){o.count=0;});save();render();};
 render();`;
-  return { html: wrap(name, '投票应用 · 数据保存在本地浏览器', body, script), kind: 'voting', label: '投票', unsupported: false };
+  const p = wrap(name, '投票应用 · 数据保存在本地浏览器', body, script);
+  return { ...p, kind: 'voting', label: '投票', unsupported: false };
 }
 
 function buildUnsupported(name: string): GenResult {
@@ -264,7 +283,8 @@ function buildUnsupported(name: string): GenResult {
     '<div class="card" style="text-align:center">' +
     '<p style="font-size:15px;font-weight:600;margin:0 0 6px">当前仅支持浏览器内运行的小型应用</p>' +
     '<p class="sub" style="margin:0">无法生成需要登录、支付、服务端数据库或外部 API 的应用。<br />试试：番茄钟、待办、记账、习惯打卡、计算器、投票、倒计时。</p></div>';
-  return { html: wrap(name, '需求超出当前生成范围', body, 'void 0;'), kind: 'unsupported', label: '暂不支持', unsupported: true };
+  const p = wrap(name, '需求超出当前生成范围', body, 'void 0;');
+  return { ...p, kind: 'unsupported', label: '暂不支持', unsupported: true };
 }
 
 function detect(t: string): string {
@@ -279,7 +299,7 @@ function detect(t: string): string {
   return 'generic';
 }
 
-/** 根据需求文本生成可运行的小应用 HTML */
+/** 根据需求文本生成可运行的小应用（html / css / js 三部分） */
 export function generateApp(spec: string, appName: string): GenResult {
   const t = (spec || '').toLowerCase();
   const name = appName || '我的应用';

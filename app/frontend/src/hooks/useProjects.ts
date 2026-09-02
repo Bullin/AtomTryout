@@ -11,6 +11,26 @@ export interface Revision {
   at: number;
 }
 
+/** 一次生成的应用版本（仅保留当前与上一版本） */
+export interface AppVersion {
+  /** 版本号，从 1 递增 */
+  ver: number;
+  /** 生成所依据的需求文本 */
+  spec: string;
+  /** 完整可独立运行 HTML */
+  html: string;
+  /** styles.css 内容 */
+  css: string;
+  /** app.js 内容 */
+  js: string;
+  /** 模板/类型标识 */
+  kind: string;
+  /** 模板中文名 */
+  label: string;
+  /** 生成时间 */
+  createdAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -21,14 +41,22 @@ export interface Project {
   revisions: Revision[];
   createdAt: number;
   updatedAt: number;
-  /** 最近一次生成所依据的需求文本 */
-  spec: string;
-  /** 生成的可独立运行 HTML（iframe 预览） */
-  appHtml: string;
-  /** 生成结果类型标识 */
-  appKind: string;
-  /** 生成结果中文名 */
-  appLabel: string;
+  /** 版本列表（按时间升序，最多保留 2 个：当前 + 上一版本） */
+  versions: AppVersion[];
+  /** 当前激活的版本号 */
+  activeVer: number;
+}
+
+/** 取项目当前激活版本（缺省回退到最新版本） */
+export function getActiveVersion(p: Project): AppVersion | null {
+  if (!p.versions || p.versions.length === 0) return null;
+  return p.versions.find((v) => v.ver === p.activeVer) ?? p.versions[p.versions.length - 1];
+}
+
+/** 生成一个新版本对象 */
+function makeVersion(ver: number, spec: string, name: string, createdAt: number): AppVersion {
+  const gen = generateApp(spec, name);
+  return { ver, spec, html: gen.html, css: gen.css, js: gen.js, kind: gen.kind, label: gen.label, createdAt };
 }
 
 const PROJECTS_KEY = 'atom-taste-projects-v1';
@@ -83,10 +111,23 @@ export function formatTime(ts: number): string {
 
 function normalize(p: Project): Project {
   let q = p;
-  // 兼容旧数据：缺少生成字段时按需求即时回填
-  if (typeof q.appHtml !== 'string' || !q.appHtml) {
-    const gen = generateApp(q.spec || q.requirement, q.name);
-    q = { ...q, spec: q.spec || q.requirement, appHtml: gen.html, appKind: gen.kind, appLabel: gen.label };
+  // 兼容旧数据：没有 versions 字段时，按需求（或旧的 appHtml 字段）即时回填为 v1
+  if (!Array.isArray(q.versions) || q.versions.length === 0) {
+    const legacy = q as unknown as { spec?: string; appHtml?: string; appKind?: string; appLabel?: string };
+    const spec = legacy.spec || q.requirement;
+    const v1: AppVersion = makeVersion(1, spec, q.name, q.buildingAt || q.createdAt || Date.now());
+    q = { ...q, versions: [v1], activeVer: 1 };
+  } else if (q.versions.some((v) => typeof v.css !== 'string')) {
+    // 兼容只存了 html 的旧版本：拆出 css / js
+    q = {
+      ...q,
+      versions: q.versions.map((v) => {
+        if (typeof v.css === 'string' && typeof v.js === 'string') return v;
+        const css = v.html.match(/<style>([\s\S]*?)<\/style>/)?.[1]?.trim() ?? '';
+        const js = v.html.match(/<script>([\s\S]*?)<\/script>/)?.[1]?.trim() ?? '';
+        return { ...v, css, js };
+      }),
+    };
   }
   if (q.status === 'building' && Date.now() - q.buildingAt >= BUILD_MS) {
     return { ...q, status: 'done' };
@@ -94,10 +135,32 @@ function normalize(p: Project): Project {
   return q;
 }
 
+/** 仅开发预览环境：无历史数据时种入一个示例项目，便于直接查看工作台（生产构建不受影响） */
+function seedDemoProjects(): Project[] {
+  const now = Date.now();
+  const spec = '创建一个每日进步习惯打卡应用';
+  const name = deriveProjectName(spec);
+  return [
+    {
+      id: 'p-demo-daily',
+      name,
+      requirement: spec,
+      appType: inferAppType(spec),
+      status: 'done',
+      buildingAt: now - 5000,
+      revisions: [],
+      createdAt: now - 60000,
+      updatedAt: now - 5000,
+      versions: [makeVersion(1, spec, name, now - 5000)],
+      activeVer: 1,
+    },
+  ];
+}
+
 function loadProjects(): Project[] {
   try {
     const raw = localStorage.getItem(PROJECTS_KEY);
-    if (!raw) return [];
+    if (!raw) return import.meta.env.DEV ? seedDemoProjects() : [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
     return arr.map(normalize);
@@ -176,7 +239,6 @@ export function useProjects() {
       const id = `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const appType = inferAppType(text);
       const name = deriveProjectName(text);
-      const gen = generateApp(text, name);
       const now = Date.now();
       const project: Project = {
         id,
@@ -188,10 +250,8 @@ export function useProjects() {
         revisions: [],
         createdAt: now,
         updatedAt: now,
-        spec: text,
-        appHtml: gen.html,
-        appKind: gen.kind,
-        appLabel: gen.label,
+        versions: [makeVersion(1, text, name, now)],
+        activeVer: 1,
       };
       setProjects((prev) => [...prev, project]);
       setUi({ mode: 'edit', currentProjectId: id });
@@ -223,7 +283,7 @@ export function useProjects() {
     );
   }, []);
 
-  /** 发送新需求：加入修改记录 → 显示“正在生成”约 2 秒 → 生成新应用并切换预览 */
+  /** 发送新需求：加入修改记录 → 显示“正在生成”约 2 秒 → 生成新版本（仅保留当前 + 上一版本） */
   const regenerate = useCallback(
     (projectId: string, text: string, onDone?: (unsupported: boolean) => void) => {
       const t = text.trim();
@@ -242,9 +302,16 @@ export function useProjects() {
         setProjects((prev) =>
           prev.map((p) => {
             if (p.id !== projectId) return p;
-            const gen = generateApp(t, p.name);
-            unsupported = gen.unsupported;
-            return { ...p, spec: t, appHtml: gen.html, appKind: gen.kind, appLabel: gen.label, updatedAt: Date.now() };
+            const nextVer = Math.max(0, ...p.versions.map((v) => v.ver)) + 1;
+            const version = makeVersion(nextVer, t, p.name, Date.now());
+            unsupported = version.kind === 'unsupported';
+            // 只保留最近两个版本（当前 + 上一版本）
+            return {
+              ...p,
+              versions: [...p.versions, version].slice(-2),
+              activeVer: nextVer,
+              updatedAt: Date.now(),
+            };
           }),
         );
         setRegeneratingId(null);
@@ -254,7 +321,18 @@ export function useProjects() {
     [],
   );
 
+  /** 切换当前版本：预览与代码同步变化 */
+  const setActiveVersion = useCallback((projectId: string, ver: number) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId && p.versions.some((v) => v.ver === ver)
+          ? { ...p, activeVer: ver, updatedAt: Date.now() }
+          : p,
+      ),
+    );
+  }, []);
+
   const activeProject = projects.find((p) => p.id === ui.currentProjectId) ?? null;
 
-  return { projects, ui, activeProject, createProject, openProject, goCreate, addRevision, regenerate, regeneratingId };
+  return { projects, ui, activeProject, createProject, openProject, goCreate, addRevision, regenerate, regeneratingId, setActiveVersion };
 }

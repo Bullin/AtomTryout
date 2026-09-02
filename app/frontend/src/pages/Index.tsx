@@ -5,7 +5,7 @@ import LeftNav from '@/components/workbench/LeftNav';
 import RequirementPanel from '@/components/workbench/RequirementPanel';
 import PreviewWorkspace from '@/components/workbench/PreviewWorkspace';
 import CreatePage from '@/components/workbench/CreatePage';
-import { useProjects } from '@/hooks/useProjects';
+import { formatTime, useProjects } from '@/hooks/useProjects';
 
 /**
  * 应用入口：根据项目状态在「创建页」与「编辑工作台」之间切换。
@@ -14,7 +14,7 @@ import { useProjects } from '@/hooks/useProjects';
  * 中间面板发送需求后：加入修改记录 → 显示“正在生成”约 2 秒 → 生成可运行小应用并切换预览。
  */
 export default function Workbench() {
-  const { projects, ui, activeProject, createProject, openProject, goCreate, regenerate, regeneratingId } = useProjects();
+  const { projects, ui, activeProject, createProject, openProject, goCreate, regenerate, regeneratingId, setActiveVersion } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
   // 创建页：没有项目，或用户主动点击「新建应用」返回
@@ -93,6 +93,11 @@ export default function Workbench() {
           <PreviewWorkspace
             project={activeProject}
             generating={generating}
+            onSwitchVersion={(ver) => {
+              setActiveVersion(activeProject.id, ver);
+              const v = activeProject.versions.find((x) => x.ver === ver);
+              toast(`已切换到 v${ver}`, { description: v ? `${v.label} · ${formatTime(v.createdAt)} 生成` : undefined });
+            }}
             className={cn(view === 'requirements' ? 'hidden md:flex' : 'flex')}
           />
         </div>
