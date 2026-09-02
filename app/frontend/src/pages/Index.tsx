@@ -12,6 +12,7 @@ import { formatTime, useProjects } from '@/hooks/useProjects';
  * - 无项目（localStorage 为空）：显示创建页
  * - 已有项目：直接进入最近打开的三栏编辑工作台（导航常驻，小屏可切换需求/预览）
  * 项目数据 localStorage 缓存 + Atoms Cloud 云端同步；最近项目支持删除。
+ * 右侧工作区含「检查结果」本地规则检查与演示用「模拟生成失败」入口。
  */
 export default function Workbench() {
   const {
@@ -30,6 +31,10 @@ export default function Workbench() {
     deleteProject,
     loginToCloud,
     logout,
+    failureId,
+    simulateFailure,
+    retryGenerate,
+    restorePreviousVersion,
   } = useProjects();
   const [view, setView] = useState<'requirements' | 'preview'>('preview');
 
@@ -54,6 +59,7 @@ export default function Workbench() {
   }
 
   const generating = regeneratingId === activeProject.id;
+  const failed = failureId === activeProject.id;
 
   const handleNewApp = () => {
     goCreate();
@@ -69,6 +75,21 @@ export default function Workbench() {
     deleteProject(id);
     toast('项目已删除', {
       description: authState === 'authenticated' ? `「${name}」已从本地与云端移除` : `「${name}」已从本地移除`,
+    });
+  };
+
+  /** 失败后重试：清除失败状态，确认当前版本仍可用（预览与数据本就保留） */
+  const handleRetry = () => {
+    retryGenerate(activeProject.id);
+    toast.success('已重试', { description: '当前版本可正常运行，预览与数据未受影响' });
+  };
+
+  /** 失败后恢复上一版本：切换激活版本并清除失败状态 */
+  const handleRestore = () => {
+    const prev = [...activeProject.versions].sort((a, b) => a.ver - b.ver).slice(-2)[0];
+    restorePreviousVersion(activeProject.id);
+    toast.success('已恢复上一版本', {
+      description: prev ? `当前显示 v${prev.ver} · ${prev.label}` : undefined,
     });
   };
 
@@ -138,6 +159,10 @@ export default function Workbench() {
           <PreviewWorkspace
             project={activeProject}
             generating={generating}
+            failure={failed}
+            onSimulateFailure={simulateFailure}
+            onRetry={handleRetry}
+            onRestorePrevious={handleRestore}
             onSwitchVersion={(ver) => {
               setActiveVersion(activeProject.id, ver);
               const v = activeProject.versions.find((x) => x.ver === ver);

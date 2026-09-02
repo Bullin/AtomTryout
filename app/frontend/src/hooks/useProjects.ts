@@ -260,6 +260,8 @@ export function useProjects() {
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [user, setUser] = useState<CloudUser | null>(null);
   const [syncing, setSyncing] = useState(false);
+  /** 演示用：模拟生成失败的项目 id（仅状态提示，不影响版本与数据） */
+  const [failureId, setFailureId] = useState<string | null>(null);
 
   const projectsRef = useRef(projects);
   const authRef = useRef(authState);
@@ -411,6 +413,7 @@ export function useProjects() {
       });
     }
     delete lastSyncedRef.current[id];
+    setFailureId((cur) => (cur === id ? null : cur));
     const next = projectsRef.current.filter((p) => p.id !== id);
     setProjects(next);
     setUi((prev) => {
@@ -452,6 +455,7 @@ export function useProjects() {
             : p,
         ),
       );
+      setFailureId((cur) => (cur === projectId ? null : cur));
       setRegeneratingId(projectId);
       window.setTimeout(() => {
         let unsupported = false;
@@ -488,6 +492,30 @@ export function useProjects() {
     );
   }, []);
 
+  /** 演示：触发一次模拟生成失败（仅记录状态，保留全部版本与数据） */
+  const simulateFailure = useCallback((projectId: string) => {
+    setFailureId(projectId);
+  }, []);
+
+  /** 失败后重试：清除失败状态；生成结果本就保留，预览可继续操作 */
+  const retryGenerate = useCallback((projectId: string) => {
+    setFailureId((cur) => (cur === projectId ? null : cur));
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, updatedAt: Date.now() } : p)));
+  }, []);
+
+  /** 失败后恢复上一版本：切换 activeVer 到上一版本并清除失败状态 */
+  const restorePreviousVersion = useCallback((projectId: string) => {
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+        const sorted = [...p.versions].sort((a, b) => a.ver - b.ver);
+        if (sorted.length < 2) return p;
+        return { ...p, activeVer: sorted[sorted.length - 2].ver, updatedAt: Date.now() };
+      }),
+    );
+    setFailureId((cur) => (cur === projectId ? null : cur));
+  }, []);
+
   /** 触发平台登录：登录后页面重载并自动拉取云端项目 */
   const loginToCloud = useCallback(() => {
     cloudLogin();
@@ -519,5 +547,9 @@ export function useProjects() {
     deleteProject,
     loginToCloud,
     logout,
+    failureId,
+    simulateFailure,
+    retryGenerate,
+    restorePreviousVersion,
   };
 }

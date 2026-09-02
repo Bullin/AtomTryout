@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Check,
   CheckCircle2,
   Code2,
@@ -16,10 +17,15 @@ import {
   Minimize,
   Monitor,
   RefreshCw,
+  RotateCcw,
+  ShieldCheck,
   Smartphone,
+  Undo2,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { runLocalChecks } from '@/lib/checks';
 import { BUILD_MS, formatTime, getActiveVersion, type Project } from '@/hooks/useProjects';
 
 interface PreviewWorkspaceProps {
@@ -28,10 +34,18 @@ interface PreviewWorkspaceProps {
   generating: boolean;
   /** 切换版本（当前 / 上一版本），预览与代码同步变化 */
   onSwitchVersion: (ver: number) => void;
+  /** 演示：当前项目是否处于模拟生成失败状态 */
+  failure: boolean;
+  /** 演示入口：触发一次模拟生成失败 */
+  onSimulateFailure: (projectId: string) => void;
+  /** 失败后重试：保留预览与数据 */
+  onRetry: () => void;
+  /** 失败后恢复上一版本 */
+  onRestorePrevious: () => void;
   className?: string;
 }
 
-type TabKey = 'preview' | 'code' | 'test' | 'log';
+type TabKey = 'preview' | 'code' | 'test' | 'check' | 'log';
 type DeviceKey = 'desktop' | 'mobile';
 type TestState = 'idle' | 'running' | 'passed';
 type CodeFile = 'index.html' | 'styles.css' | 'app.js';
@@ -42,8 +56,17 @@ const CODE_FILES: { key: CodeFile; icon: typeof FileCode2 }[] = [
   { key: 'app.js', icon: FileText },
 ];
 
-/** 右侧预览工作区：预览 / 代码 / 测试 / 日志标签 + 设备切换、刷新、全屏、导出、版本切换 */
-export default function PreviewWorkspace({ project, generating, onSwitchVersion, className }: PreviewWorkspaceProps) {
+/** 右侧预览工作区：预览 / 代码 / 测试 / 检查结果 / 日志标签 + 设备切换、刷新、全屏、导出、版本切换 */
+export default function PreviewWorkspace({
+  project,
+  generating,
+  onSwitchVersion,
+  failure,
+  onSimulateFailure,
+  onRetry,
+  onRestorePrevious,
+  className,
+}: PreviewWorkspaceProps) {
   const [tab, setTab] = useState<TabKey>('preview');
   const [device, setDevice] = useState<DeviceKey>('desktop');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -100,6 +123,12 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
     }, 900);
   }, [testState]);
 
+  /** 演示入口：模拟一次生成失败（仅显示错误提示，保留当前预览与全部数据） */
+  const handleSimulateFailure = useCallback(() => {
+    onSimulateFailure(project.id);
+    toast.error('生成失败（演示）', { description: '预览与上一版本已保留，用户数据未清空' });
+  }, [onSimulateFailure, project.id]);
+
   const exportHtml = useCallback(() => {
     if (!version) return;
     const blob = new Blob([version.html], { type: 'text/html;charset=utf-8' });
@@ -146,6 +175,11 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
   // 版本列表：按时间升序，最多两个（当前 + 上一版本）
   const versions = useMemo(() => [...project.versions].sort((a, b) => a.ver - b.ver), [project.versions]);
   const latestVer = versions.length ? versions[versions.length - 1].ver : 0;
+  const hasPrev = versions.length > 1;
+
+  // 本地规则检查：对当前激活版本产物做静态分析，切换版本后结果随之更新
+  const checks = useMemo(() => runLocalChecks(version), [version]);
+  const passedCount = checks.filter((c) => c.passed).length;
 
   const logs = useMemo(() => {
     const lines: { t: number; msg: string }[] = [
@@ -159,10 +193,42 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
     return lines.sort((a, b) => a.t - b.t);
   }, [project, appLabel]);
 
+  // 模拟生成失败的错误提示条（预览与检查结果标签共用）
+  const failureBanner = failure ? (
+    <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-card p-3 shadow-sm sm:flex-row sm:items-center">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold text-foreground">生成失败（演示）</p>
+        <p className="text-[11px] text-muted-foreground">当前预览与上一版本已保留，用户数据未清空。可重试或恢复上一版本。</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 active:scale-95"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          重试
+        </button>
+        <button
+          type="button"
+          onClick={onRestorePrevious}
+          disabled={!hasPrev}
+          title={hasPrev ? undefined : '没有可恢复的上一版本'}
+          className="flex h-7 items-center gap-1 rounded-md border bg-background px-2.5 text-xs font-medium text-foreground transition-colors duration-150 hover:bg-accent active:scale-95 disabled:opacity-40"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+          恢复上一版
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   const TABS: { key: TabKey; label: string; icon: typeof Eye }[] = [
     { key: 'preview', label: '预览', icon: Eye },
     { key: 'code', label: '代码', icon: Code2 },
     { key: 'test', label: '测试', icon: FlaskConical },
+    { key: 'check', label: '检查结果', icon: ShieldCheck },
     { key: 'log', label: '日志', icon: FileText },
   ];
 
@@ -171,7 +237,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
       {/* 顶部紧凑工具栏 */}
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b bg-card px-3">
         {/* 标签切换 */}
-        <div className="flex items-center gap-1 rounded-md bg-secondary p-0.5" role="tablist" aria-label="工作区视图">
+        <div className="flex items-center gap-1 overflow-x-auto rounded-md bg-secondary p-0.5" role="tablist" aria-label="工作区视图">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -180,8 +246,8 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
               aria-selected={tab === key}
               onClick={() => setTab(key)}
               className={cn(
-                'flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors duration-150 sm:px-3',
-                tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:md:text-foreground',
+                'flex shrink-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors duration-150 sm:px-3',
+                tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
               )}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -192,6 +258,17 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
 
         {/* 工具按钮组 */}
         <div className="flex items-center gap-1">
+          {tab === 'preview' && !building && !generating && !failure && (
+            <button
+              type="button"
+              onClick={handleSimulateFailure}
+              title="演示：模拟一次生成失败"
+              className="mr-1 flex h-7 items-center gap-1 rounded-md border border-dashed px-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">模拟失败</span>
+            </button>
+          )}
           {tab === 'preview' && !building && (
             <>
               <div className="mr-1 flex items-center gap-0.5 rounded-md border bg-background p-0.5" aria-label="预览设备">
@@ -204,7 +281,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                   aria-label="桌面预览"
                   className={cn(
                     'flex h-6 w-6 items-center justify-center rounded-[4px] transition-colors duration-150',
-                    device === 'desktop' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:md:bg-accent',
+                    device === 'desktop' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
                   )}
                 >
                   <Monitor className="h-3.5 w-3.5" />
@@ -218,7 +295,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                   aria-label="手机预览"
                   className={cn(
                     'flex h-6 w-6 items-center justify-center rounded-[4px] transition-colors duration-150',
-                    device === 'mobile' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:md:bg-accent',
+                    device === 'mobile' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
                   )}
                 >
                   <Smartphone className="h-3.5 w-3.5" />
@@ -228,7 +305,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                 type="button"
                 onClick={handleRefresh}
                 aria-label="刷新预览"
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:md:bg-accent hover:md:text-foreground active:scale-95"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
@@ -238,7 +315,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
             type="button"
             onClick={handleFullscreen}
             aria-label={isFullscreen ? '退出全屏' : '进入全屏'}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:md:bg-accent hover:md:text-foreground active:scale-95"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95"
           >
             {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
           </button>
@@ -247,7 +324,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
             onClick={exportHtml}
             disabled={building || !version}
             aria-label="导出 HTML"
-            className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:md:bg-accent hover:md:text-foreground active:scale-95 disabled:opacity-40 disabled:hover:md:bg-transparent"
+            className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground active:scale-95 disabled:opacity-40 disabled:hover:bg-transparent"
           >
             <Download className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">导出</span>
@@ -289,6 +366,12 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                 </div>
               </div>
             )}
+            {/* 模拟生成失败：错误提示条，保留当前预览与上一版本，不清空数据 */}
+            {failure && (
+              <div className="absolute inset-x-0 top-0 z-10 p-3">
+                <div className="mx-auto max-w-lg">{failureBanner}</div>
+              </div>
+            )}
             {/* 生成期间：保留当前预览，仅叠加提示条，不显示空白 */}
             {generating && (
               <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-3">
@@ -313,7 +396,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                     onClick={() => setCodeFile(key)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors duration-150',
-                      codeFile === key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:md:bg-accent hover:md:text-foreground',
+                      codeFile === key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                     )}
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -337,7 +420,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                       onClick={() => onSwitchVersion(v.ver)}
                       className={cn(
                         'w-full rounded-md border px-2 py-1.5 text-left transition-colors duration-150',
-                        active ? 'border-primary/30 bg-primary/10' : 'border-transparent hover:md:bg-accent',
+                        active ? 'border-primary/30 bg-primary/10' : 'border-transparent hover:bg-accent',
                       )}
                     >
                       <span className="flex items-center gap-1.5">
@@ -367,7 +450,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                   type="button"
                   onClick={handleCopy}
                   disabled={!codeContent}
-                  className="flex h-7 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium text-foreground transition-colors duration-150 hover:md:bg-accent active:scale-95 disabled:opacity-40"
+                  className="flex h-7 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium text-foreground transition-colors duration-150 hover:bg-accent active:scale-95 disabled:opacity-40"
                 >
                   {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
                   {copied ? '已复制' : '复制代码'}
@@ -376,7 +459,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                   type="button"
                   onClick={exportHtml}
                   disabled={building || !version}
-                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:md:bg-primary/90 active:scale-95 disabled:opacity-50"
+                  className="flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 active:scale-95 disabled:opacity-50"
                 >
                   <Download className="h-3.5 w-3.5" />
                   导出 HTML
@@ -415,7 +498,7 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                 type="button"
                 onClick={handleRunTest}
                 disabled={testState === 'running' || building || generating}
-                className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-95 disabled:opacity-50"
+                className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-transform duration-150 hover:bg-primary/90 active:scale-95 disabled:opacity-50"
               >
                 {testState === 'running' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
                 {testState === 'running' ? '运行中' : testState === 'passed' ? '重新运行' : '运行测试'}
@@ -453,6 +536,52 @@ export default function PreviewWorkspace({ project, generating, onSwitchVersion,
                 3 / 3 通过 · 用时 0.9s
               </p>
             )}
+          </div>
+        </div>
+      ) : tab === 'check' ? (
+        <div className="min-h-0 flex-1 overflow-auto bg-card p-4 sm:p-6">
+          <div className="mx-auto max-w-xl space-y-4">
+            {failureBanner}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold">检查结果</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  本地规则检查 · 当前版本 v{version?.ver ?? 1}（{appLabel}）
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full px-2.5 py-1 text-xs font-medium',
+                  passedCount === checks.length ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive',
+                )}
+              >
+                {passedCount} / {checks.length} 通过
+              </span>
+            </div>
+            <ul className="divide-y rounded-lg border bg-background">
+              {checks.map((c) => (
+                <li key={c.id} className="flex items-start gap-3 px-4 py-3">
+                  {c.passed ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  ) : (
+                    <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{c.label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{c.detail}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      c.passed ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive',
+                    )}
+                  >
+                    {c.passed ? '通过' : '失败'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-muted-foreground">检查在本地按规则完成，不发送任何数据；切换版本后结果随之更新。</p>
           </div>
         </div>
       ) : (
