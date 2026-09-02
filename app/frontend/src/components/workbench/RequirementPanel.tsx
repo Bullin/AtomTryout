@@ -122,7 +122,7 @@ export default function RequirementPanel({ project, onSend, generating, classNam
             onClick={handleSend}
             disabled={generating}
             aria-label="发送需求"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-95 disabled:opacity-50"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-transform duration-150 md:hover:bg-primary/90 active:scale-95 disabled:opacity-50"
           >
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>

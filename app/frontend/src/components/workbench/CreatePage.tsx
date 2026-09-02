@@ -59,7 +59,7 @@ function RecentItem({ project, onOpen, onDelete }: { project: Project; onOpen: (
       <button
         type="button"
         onClick={() => onOpen(project.id)}
-        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:md:bg-accent"
+        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors duration-150 md:hover:bg-accent"
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
           <Atom className="h-3.5 w-3.5" />
@@ -195,7 +195,7 @@ export default function CreatePage({ projects, authState, user, syncing, onCreat
           <button
             type="button"
             onClick={submit}
-            className="flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform duration-150 hover:md:bg-primary/90 active:scale-[0.98]"
+            className="flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform duration-150 md:hover:bg-primary/90 active:scale-[0.98]"
           >
             <Sparkles className="h-4 w-4" />
             开始创建
@@ -215,7 +215,7 @@ export default function CreatePage({ projects, authState, user, syncing, onCreat
                   setText(ex);
                   setError(null);
                 }}
-                className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors duration-150 hover:md:border-primary/40 hover:md:bg-primary/5 active:scale-[0.99]"
+                className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors duration-150 md:hover:border-primary/40 md:hover:bg-primary/5 active:scale-[0.99]"
               >
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="truncate">{ex}</span>

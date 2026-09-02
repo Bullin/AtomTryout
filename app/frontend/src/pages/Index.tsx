@@ -66,10 +66,6 @@ export default function Workbench() {
     toast('已返回创建页', { description: '已有项目已保留，可从最近项目随时返回' });
   };
 
-  const handleSettings = () => {
-    toast('设置', { description: '偏好设置将在后续版本开放' });
-  };
-
   const handleDelete = (id: string) => {
     const name = projects.find((p) => p.id === id)?.name;
     deleteProject(id);
@@ -105,7 +101,6 @@ export default function Workbench() {
         onSelectProject={openProject}
         onDeleteProject={handleDelete}
         onNewApp={handleNewApp}
-        onSettings={handleSettings}
         onLogin={loginToCloud}
         onLogout={logout}
       />

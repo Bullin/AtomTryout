@@ -10,7 +10,6 @@ import {
   FileCode2,
   FileJson,
   FileText,
-  FlaskConical,
   History,
   Loader2,
   Maximize,
@@ -45,9 +44,8 @@ interface PreviewWorkspaceProps {
   className?: string;
 }
 
-type TabKey = 'preview' | 'code' | 'test' | 'check' | 'log';
+type TabKey = 'preview' | 'code' | 'check' | 'log';
 type DeviceKey = 'desktop' | 'mobile';
-type TestState = 'idle' | 'running' | 'passed';
 type CodeFile = 'index.html' | 'styles.css' | 'app.js';
 
 const CODE_FILES: { key: CodeFile; icon: typeof FileCode2 }[] = [
@@ -56,7 +54,7 @@ const CODE_FILES: { key: CodeFile; icon: typeof FileCode2 }[] = [
   { key: 'app.js', icon: FileText },
 ];
 
-/** 右侧预览工作区：预览 / 代码 / 测试 / 检查结果 / 日志标签 + 设备切换、刷新、全屏、导出、版本切换 */
+/** 右侧预览工作区：预览 / 代码 / 检查结果 / 日志标签 + 设备切换、刷新、全屏、导出、版本切换 */
 export default function PreviewWorkspace({
   project,
   generating,
@@ -71,7 +69,6 @@ export default function PreviewWorkspace({
   const [device, setDevice] = useState<DeviceKey>('desktop');
   const [refreshKey, setRefreshKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [testState, setTestState] = useState<TestState>('idle');
   const [codeFile, setCodeFile] = useState<CodeFile>('index.html');
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,7 +80,6 @@ export default function PreviewWorkspace({
   // 切换项目时重置局部状态
   useEffect(() => {
     setTab('preview');
-    setTestState('idle');
     setCodeFile('index.html');
   }, [project.id]);
 
@@ -113,15 +109,6 @@ export default function PreviewWorkspace({
       setIsFullscreen((v) => !v);
     }
   }, []);
-
-  const handleRunTest = useCallback(() => {
-    if (testState === 'running') return;
-    setTestState('running');
-    setTimeout(() => {
-      setTestState('passed');
-      toast.success('测试通过', { description: '3 项冒烟测试全部通过' });
-    }, 900);
-  }, [testState]);
 
   /** 演示入口：模拟一次生成失败（仅显示错误提示，保留当前预览与全部数据） */
   const handleSimulateFailure = useCallback(() => {
@@ -227,7 +214,6 @@ export default function PreviewWorkspace({
   const TABS: { key: TabKey; label: string; icon: typeof Eye }[] = [
     { key: 'preview', label: '预览', icon: Eye },
     { key: 'code', label: '代码', icon: Code2 },
-    { key: 'test', label: '测试', icon: FlaskConical },
     { key: 'check', label: '检查结果', icon: ShieldCheck },
     { key: 'log', label: '日志', icon: FileText },
   ];
@@ -484,58 +470,6 @@ export default function PreviewWorkspace({
               <span>{codeLines.length} 行</span>
               <span>当前版本 v{version?.ver ?? 1}{latestVer !== version?.ver ? `（最新 v${latestVer}）` : ''}</span>
             </div>
-          </div>
-        </div>
-      ) : tab === 'test' ? (
-        <div className="min-h-0 flex-1 overflow-auto bg-card p-4 sm:p-6">
-          <div className="mx-auto max-w-xl">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">冒烟测试</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">验证 {appLabel} 的核心交互</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRunTest}
-                disabled={testState === 'running' || building || generating}
-                className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-transform duration-150 hover:bg-primary/90 active:scale-95 disabled:opacity-50"
-              >
-                {testState === 'running' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
-                {testState === 'running' ? '运行中' : testState === 'passed' ? '重新运行' : '运行测试'}
-              </button>
-            </div>
-            {testState === 'idle' ? (
-              <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-                点击「运行测试」开始验证应用
-              </div>
-            ) : (
-              <ul className="divide-y rounded-lg border bg-background">
-                {['应用渲染与初始化', '核心交互（按钮 / 表单 / 状态更新）', '本地数据持久化'].map((name, i) => (
-                  <li key={name} className="flex items-center gap-3 px-4 py-3">
-                    {testState === 'running' ? (
-                      <Loader2 className={cn('h-4 w-4 text-muted-foreground', i === 0 && 'animate-spin')} />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                    )}
-                    <span className="flex-1 text-sm">{name}</span>
-                    <span
-                      className={cn(
-                        'text-xs font-medium',
-                        testState === 'running' ? 'text-muted-foreground' : 'text-primary',
-                      )}
-                    >
-                      {testState === 'running' ? (i === 0 ? '运行中' : '等待') : '通过'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {testState === 'passed' && (
-              <p className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                3 / 3 通过 · 用时 0.9s
-              </p>
-            )}
           </div>
         </div>
       ) : tab === 'check' ? (
