@@ -75,6 +75,42 @@ pnpm run build
 
 > 在 Atoms 平台上，预览服务会在文件变更后自动热重载，无需手动重启。
 
+## 部署说明
+
+本项目在 Atoms 平台上开发与发布，前端与后端（Atoms Cloud）均由平台托管，无需自备服务器、数据库或 OIDC 回调地址。
+
+### 平台一键发布
+
+1. 确认代码检查与生产构建通过：`pnpm run lint && pnpm run build`（前端产物位于 `app/frontend/dist/`）。
+2. 在 **App Viewer** 中预览完整应用，确认创建、生成、同步、登录/退出流程正常。
+3. 点击 **Publish** 按钮，在弹出的下拉框中可编辑发布链接（URL），或直接点击 Publish 完成部署。
+4. 发布后可点击右上角 **Share** 复制链接分享；也可将可见性设为 Public / Secret / Private，或用 **Export** 下载全部代码文件。
+
+详见 https://help.atoms.dev/en/articles/12129698-app-viewer 与 https://help.atoms.dev/en/articles/12129279-share 。
+
+### 后端与数据
+
+- **Atoms Cloud**（数据库、认证、对象存储）由平台托管，发布后自动可用，无需自行部署 FastAPI 服务或 PostgreSQL 实例。
+- 登录采用平台 OIDC + PKCE，`/auth/callback` 与登出回调由平台处理，无需配置第三方认证域名。
+- `atom_projects` 表已创建并完成迁移（含毫秒时间戳字段 BIGINT 升级），运行时按 `user_id` 自动隔离，前端无需处理行级权限。
+
+### 配额与计费
+
+- 发布项目使用 Cloud 能力；若 Cloud 或 AI 余额耗尽，需先为 Cloud & AI Wallet 充值后才能继续对应能力（如发布项目），详见 https://help.atoms.dev/en/articles/14432563-cloud-ai-wallet （充值入口 https://atoms.dev/dashboard?settings=cloudAiBalance ；Free 用户需先升级到 Pro 或 Max 才能充值）。
+
+### 构建产物自检（可选）
+
+发布前可在本地或平台终端验证构建：
+
+```shell
+cd app/frontend
+pnpm i
+pnpm run lint
+pnpm run build   # 静态产物输出到 dist/
+```
+
+> 注意：登录与云端同步依赖 Atoms Cloud 后端与平台 Web SDK，在平台发布环境中完整可用；若仅将 `dist/` 静态产物托管到其他环境，登录/同步入口将不可用，仅保留匿名本地缓存与规则式应用生成功能。
+
 ## 使用流程
 
 1. 打开应用进入**创建页**，输入需求（如「创建一个 2048 小游戏」）或点选示例。
