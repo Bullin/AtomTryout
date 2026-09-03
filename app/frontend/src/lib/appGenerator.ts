@@ -49,16 +49,25 @@ li.done .t{text-decoration:line-through;color:var(--mut)}
 .cal-grid button{padding:16px 0;font-size:16px;background:#fff;color:var(--ink);border:1px solid var(--line)}
 .cal-grid button.op{background:#ecfdf5;color:var(--pri2);border-color:#bbf7d0}
 .cal-grid button.eq{background:var(--pri);color:#fff}
-.g2048-wrap{position:relative}
-.g2048{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:#bbada0;border-radius:8px;padding:8px}
-.g2048 .cell{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#cdc1b4;font-weight:700;font-size:26px;color:#776e65;font-variant-numeric:tabular-nums}
-.g2048 .t2{background:#eee4da}.g2048 .t4{background:#ede0c8}
+.g2048-wrap{position:relative;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.g2048{position:relative;aspect-ratio:1/1;background:#bbada0;border-radius:8px;padding:8px;touch-action:none;transition:background .12s}
+.g2048.pressed{background:#a3907d}
+.g2048 .cell,.g2048 .tile{position:absolute;width:calc((100% - 40px)/4);height:calc((100% - 40px)/4);left:calc(8px + var(--x,0) * (8px + (100% - 40px)/4));top:calc(8px + var(--y,0) * (8px + (100% - 40px)/4))}
+.g2048 .cell{background:#cdc1b4;border-radius:6px}
+.g2048 .tile{display:flex;align-items:center;justify-content:center;border-radius:6px;background:#eee4da;font-weight:700;font-size:clamp(17px,7vw,30px);color:#776e65;font-variant-numeric:tabular-nums;transition:left .12s ease,top .12s ease;z-index:1}
+@keyframes gspawn{from{transform:scale(0)}}
+@keyframes gpop{0%{transform:scale(1)}55%{transform:scale(1.16)}100%{transform:scale(1)}}
+.g2048 .tile.spawn{animation:gspawn .16s ease}
+.g2048 .tile.merged{animation:gpop .2s ease;z-index:2}
+.g2048 .t4{background:#ede0c8}
 .g2048 .t8{background:#f2b179;color:#fff}.g2048 .t16{background:#f59563;color:#fff}
 .g2048 .t32{background:#f67c5f;color:#fff}.g2048 .t64{background:#f65e3b;color:#fff}
-.g2048 .t128{background:#edcf72;color:#fff;font-size:21px}.g2048 .t256{background:#edcc61;color:#fff;font-size:21px}
-.g2048 .t512{background:#edc850;color:#fff;font-size:21px}.g2048 .t1024{background:#edc53f;color:#fff;font-size:17px}
-.g2048 .t2048{background:#edc22e;color:#fff;font-size:17px}
-.g2048 .big{background:#3c3a32;color:#fff;font-size:15px}
+.g2048 .t128{background:#edcf72;color:#fff}.g2048 .t256{background:#edcc61;color:#fff}
+.g2048 .t512{background:#edc850;color:#fff}
+.g2048 .t1024{background:#edc53f;color:#fff}.g2048 .t2048{background:#edc22e;color:#fff}
+.g2048 .big{background:#3c3a32;color:#fff}
+.g2048 .t128,.g2048 .t256,.g2048 .t512{font-size:clamp(13px,5.4vw,23px)}
+.g2048 .t1024,.g2048 .t2048,.g2048 .big{font-size:clamp(10px,4.3vw,18px)}
 .scorebox{display:flex;gap:8px;margin-bottom:12px;align-items:stretch}
 .scorebox .sb{flex:1;background:#bbada0;color:#fff;border-radius:8px;text-align:center;padding:6px 0}
 .scorebox .sb b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
@@ -307,39 +316,60 @@ function build2048(name: string): GenResult {
     '<p class="hint">键盘方向键或手机滑动移动方块，合并相同数字，冲击 2048！</p>';
   const script = `var KEY='${key}';
 var best=parseInt(localStorage.getItem(KEY+'-best')||'0',10);
-var board,score,over,won;
-function newGame(){board=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];score=0;over=false;won=false;add();add();render();}
-function add(){var e=[];for(var i=0;i<16;i++)if(!board[i])e.push(i);if(!e.length)return;board[e[Math.floor(Math.random()*e.length)]]=Math.random()<0.9?2:4;}
-function slide(row){var a=row.filter(function(v){return v;});for(var i=0;i<a.length-1;i++){if(a[i]===a[i+1]){a[i]*=2;score+=a[i];a.splice(i+1,1);}}while(a.length<4)a.push(0);return a;}
-function move(dir){var prev=board.join(',');
-for(var i=0;i<4;i++){var row=[];
-for(var j=0;j<4;j++){row.push(board[(dir==='left'||dir==='right')?i*4+j:j*4+i]);}
-if(dir==='right'||dir==='down')row.reverse();
-row=slide(row);
-if(dir==='right'||dir==='down')row.reverse();
-for(var k=0;k<4;k++){board[(dir==='left'||dir==='right')?i*4+k:k*4+i]=row[k];}}
-if(board.join(',')!==prev){add();check();render();}}
-function check(){if(!won&&board.indexOf(2048)>=0){won=true;flash('🎉 达成 2048！继续挑战更高分');}
-over=!board.some(function(v){return !v;});
-if(over){outer:for(var i=0;i<4;i++)for(var j=0;j<4;j++){var v=board[i*4+j];if(j<3&&v===board[i*4+j+1]){over=false;break outer;}if(i<3&&v===board[(i+1)*4+j]){over=false;break outer;}}}}
-function flash(m){var el=document.getElementById('msg');el.textContent=m;setTimeout(function(){el.textContent='';},2600);}
-function render(){var g=document.getElementById('grid');g.innerHTML='';
-for(var i=0;i<16;i++){var v=board[i];var c=document.createElement('div');
-c.className='cell'+(v?(' t'+(v<=2048?v:'big')):'');c.textContent=v||'';g.appendChild(c);}
-document.getElementById('score').textContent=score;
+var grid,score,over,won,anim,tiles,idc;
+function cls(v){return v<=2048?'t'+v:'big';}
+function pos(t){t.el.style.setProperty('--x',t.c);t.el.style.setProperty('--y',t.r);}
+function mk(r,c,v){var t={id:++idc,r:r,c:c,v:v};
+var d=document.createElement('div');d.className='tile '+cls(v)+' spawn';d.textContent=v;t.el=d;pos(t);
+grid[r][c]=t;tiles.push(t);document.getElementById('grid').appendChild(d);return t;}
+function spawn(){var e=[];for(var r=0;r<4;r++)for(var c=0;c<4;c++)if(!grid[r][c])e.push([r,c]);
+if(!e.length)return null;var p=e[Math.floor(Math.random()*e.length)];return mk(p[0],p[1],Math.random()<0.9?2:4);}
+function newGame(){grid=[[null,null,null,null],[null,null,null,null],[null,null,null,null],[null,null,null,null]];
+score=0;over=false;won=false;anim=false;tiles=[];idc=0;
+var g=document.getElementById('grid');
+Array.prototype.slice.call(g.querySelectorAll('.tile')).forEach(function(e){e.parentNode.removeChild(e);});
+document.getElementById('overlay').classList.add('hidden');
+spawn();spawn();hud();}
+function vec(d){return {left:[0,-1],right:[0,1],up:[-1,0],down:[1,0]}[d];}
+function move(dir){if(over||anim)return;
+var v=vec(dir),dr=v[0],dc=v[1],rs=[0,1,2,3],cs=[0,1,2,3];
+if(dr>0)rs.reverse();if(dc>0)cs.reverse();
+var moved=false,merges=[];
+for(var i=0;i<4;i++)for(var j=0;j<4;j++){var r=rs[i],c=cs[j],t=grid[r][c];if(!t)continue;
+var nr=r,nc=c;
+while(true){var tr=nr+dr,tc=nc+dc;if(tr<0||tr>3||tc<0||tc>3||grid[tr][tc])break;nr=tr;nc=tc;}
+var t2=nr+dr,c2=nc+dc,nxt=(t2>=0&&t2<4&&c2>=0&&c2<4)?grid[t2][c2]:null;
+if(nxt&&nxt.v===t.v&&!nxt.locked){grid[r][c]=null;t.r=nr;t.c=nc;t.dead=true;pos(t);
+nxt.v*=2;nxt.locked=true;score+=nxt.v;merges.push(nxt);moved=true;}
+else if(nr!==r||nc!==c){grid[r][c]=null;grid[nr][nc]=t;t.r=nr;t.c=nc;pos(t);moved=true;}}
+if(!moved)return;anim=true;
+try{if(navigator.vibrate)navigator.vibrate(merges.length?14:8);}catch(e){}
+setTimeout(function(){
+tiles.forEach(function(t){if(t.dead&&t.el.parentNode)t.el.parentNode.removeChild(t.el);});
+tiles=tiles.filter(function(t){return !t.dead;});
+merges.forEach(function(t){t.locked=false;
+t.el.textContent=t.v;t.el.className='tile '+cls(t.v);void t.el.offsetWidth;t.el.className='tile '+cls(t.v)+' merged';
+if(t.v===2048&&!won){won=true;flash('🎉 达成 2048！继续挑战更高分');}});
+spawn();check();hud();anim=false;},130);}
+function check(){for(var r=0;r<4;r++)for(var c=0;c<4;c++){if(!grid[r][c])return;
+var v=grid[r][c].v;if(c<3&&grid[r][c+1]&&grid[r][c+1].v===v)return;if(r<3&&grid[r+1][c]&&grid[r+1][c].v===v)return;}
+over=true;document.getElementById('overlay').classList.remove('hidden');
+document.getElementById('ovmsg').textContent='游戏结束 · 得分 '+score;}
+function hud(){document.getElementById('score').textContent=score;
 if(score>best){best=score;localStorage.setItem(KEY+'-best',String(best));}
-document.getElementById('best').textContent=best;
-var ov=document.getElementById('overlay');
-if(over){ov.classList.remove('hidden');document.getElementById('ovmsg').textContent='游戏结束 · 得分 '+score;}
-else ov.classList.add('hidden');}
-window.addEventListener('keydown',function(e){var m={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[e.key];if(m){e.preventDefault();if(!over)move(m);}});
-var sx=0,sy=0;
-document.addEventListener('touchstart',function(e){var t=e.changedTouches[0];sx=t.clientX;sy=t.clientY;},{passive:true});
-document.addEventListener('touchend',function(e){var t=e.changedTouches[0];var dx=t.clientX-sx,dy=t.clientY-sy;
+document.getElementById('best').textContent=best;}
+function flash(m){var el=document.getElementById('msg');el.textContent=m;setTimeout(function(){el.textContent='';},2600);}
+window.addEventListener('keydown',function(e){var m={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[e.key];if(m){e.preventDefault();move(m);}});
+var sx=0,sy=0,board=document.getElementById('grid');
+board.addEventListener('touchstart',function(e){var t=e.changedTouches[0];sx=t.clientX;sy=t.clientY;board.classList.add('pressed');},{passive:true});
+board.addEventListener('touchmove',function(e){e.preventDefault();},{passive:false});
+board.addEventListener('touchend',function(e){board.classList.remove('pressed');
+var t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
 if(Math.max(Math.abs(dx),Math.abs(dy))<24)return;
 if(Math.abs(dx)>Math.abs(dy))move(dx>0?'right':'left');else move(dy>0?'down':'up');},{passive:true});
 document.getElementById('new').onclick=newGame;
 document.getElementById('again').onclick=newGame;
+(function(){var g=document.getElementById('grid');for(var i=0;i<16;i++){var d=document.createElement('div');d.className='cell';d.style.setProperty('--x',i%4);d.style.setProperty('--y',Math.floor(i/4));g.appendChild(d);}})();
 newGame();`;
   const p = wrap(name, '2048 小游戏 · 最高分保存在本地浏览器', body, script);
   return { ...p, kind: 'game2048', label: '2048 小游戏', unsupported: false };
