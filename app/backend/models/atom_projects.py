@@ -1,6 +1,6 @@
 from core.database import Base
 from datetime import datetime
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import BigInteger, Column, DateTime, Integer, String
 
 
 class Atom_projects(Base):
@@ -14,11 +14,11 @@ class Atom_projects(Base):
     requirement = Column(String, nullable=True)
     app_type = Column(String, nullable=True)
     status = Column(String, nullable=True)
-    building_at = Column(Integer, nullable=True)
+    building_at = Column(BigInteger, nullable=True)
     revisions = Column(String, nullable=True)
     versions = Column(String, nullable=True)
     active_ver = Column(Integer, nullable=True)
-    client_created_at = Column(Integer, nullable=True)
-    client_updated_at = Column(Integer, nullable=True)
+    client_created_at = Column(BigInteger, nullable=True)
+    client_updated_at = Column(BigInteger, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.now)
     updated_at = Column(DateTime(timezone=True), default=datetime.now, onupdate=datetime.now)
