@@ -182,7 +182,7 @@ export default function LeftNav({
       <div className="mt-auto border-t px-2 py-2 md:px-3">
         {authState === 'authenticated' ? (
           <div className="flex items-center justify-center gap-2 px-1 py-1.5 md:justify-start md:px-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" title={user?.email ?? '已登录'}>
+            <span className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary md:flex" title={user?.email ?? '已登录'}>
               <UserRound className="h-3.5 w-3.5" />
             </span>
             <span className="hidden min-w-0 flex-1 md:block">

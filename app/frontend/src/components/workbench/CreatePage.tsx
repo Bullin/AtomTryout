@@ -104,13 +104,13 @@ export default function CreatePage({ projects, authState, user, syncing, onCreat
       <main className="flex w-full max-w-[640px] flex-col px-6 py-12 sm:py-16">
         {/* 品牌标识 + 云端状态 */}
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Atom className="h-4 w-4" />
             </span>
-            <div>
-              <p className="text-sm font-semibold leading-none tracking-tight">Atom 尝鲜</p>
-              <p className="mt-1 text-xs text-muted-foreground">描述想法，即刻生成可运行的应用</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-none tracking-tight">Atom 尝鲜</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">描述想法，即刻生成可运行的应用</p>
             </div>
           </div>
           {authState === 'authenticated' ? (

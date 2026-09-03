@@ -242,8 +242,8 @@ export default function PreviewWorkspace({
           ))}
         </div>
 
-        {/* 工具按钮组 */}
-        <div className="flex items-center gap-1">
+        {/* 工具按钮组：窄屏不被标签挤压，标签区自行横向滚动 */}
+        <div className="flex shrink-0 items-center gap-1">
           {tab === 'preview' && !building && !generating && !failure && (
             <button
               type="button"
