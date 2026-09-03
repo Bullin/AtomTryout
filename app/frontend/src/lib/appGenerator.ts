@@ -49,6 +49,23 @@ li.done .t{text-decoration:line-through;color:var(--mut)}
 .cal-grid button{padding:16px 0;font-size:16px;background:#fff;color:var(--ink);border:1px solid var(--line)}
 .cal-grid button.op{background:#ecfdf5;color:var(--pri2);border-color:#bbf7d0}
 .cal-grid button.eq{background:var(--pri);color:#fff}
+.g2048-wrap{position:relative}
+.g2048{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:#bbada0;border-radius:8px;padding:8px}
+.g2048 .cell{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#cdc1b4;font-weight:700;font-size:26px;color:#776e65;font-variant-numeric:tabular-nums}
+.g2048 .t2{background:#eee4da}.g2048 .t4{background:#ede0c8}
+.g2048 .t8{background:#f2b179;color:#fff}.g2048 .t16{background:#f59563;color:#fff}
+.g2048 .t32{background:#f67c5f;color:#fff}.g2048 .t64{background:#f65e3b;color:#fff}
+.g2048 .t128{background:#edcf72;color:#fff;font-size:21px}.g2048 .t256{background:#edcc61;color:#fff;font-size:21px}
+.g2048 .t512{background:#edc850;color:#fff;font-size:21px}.g2048 .t1024{background:#edc53f;color:#fff;font-size:17px}
+.g2048 .t2048{background:#edc22e;color:#fff;font-size:17px}
+.g2048 .big{background:#3c3a32;color:#fff;font-size:15px}
+.scorebox{display:flex;gap:8px;margin-bottom:12px;align-items:stretch}
+.scorebox .sb{flex:1;background:#bbada0;color:#fff;border-radius:8px;text-align:center;padding:6px 0}
+.scorebox .sb b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.scorebox .sb span{font-size:11px;opacity:.85}
+.overlay{position:absolute;inset:8px;background:rgba(238,228,218,.82);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:19px;font-weight:700;color:#776e65}
+.overlay.hidden{display:none}
+.hint{color:var(--mut);font-size:12px;margin-top:10px;text-align:center}
 `;
 
 function esc(s: string): string {
@@ -278,6 +295,56 @@ render();`;
   return { ...p, kind: 'voting', label: '投票', unsupported: false };
 }
 
+function build2048(name: string): GenResult {
+  const key = sanitizeKey(name);
+  const body =
+    '<div class="scorebox"><div class="sb"><span>分数</span><b id="score">0</b></div>' +
+    '<div class="sb"><span>最高分</span><b id="best">0</b></div>' +
+    '<button id="new" class="ghost">新游戏</button></div>' +
+    '<div class="g2048-wrap"><div class="g2048" id="grid"></div>' +
+    '<div class="overlay hidden" id="overlay"><span id="ovmsg"></span><button id="again">再来一局</button></div></div>' +
+    '<p class="chip" id="msg" style="display:block;text-align:center;min-height:18px;margin-top:8px"></p>' +
+    '<p class="hint">键盘方向键或手机滑动移动方块，合并相同数字，冲击 2048！</p>';
+  const script = `var KEY='${key}';
+var best=parseInt(localStorage.getItem(KEY+'-best')||'0',10);
+var board,score,over,won;
+function newGame(){board=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];score=0;over=false;won=false;add();add();render();}
+function add(){var e=[];for(var i=0;i<16;i++)if(!board[i])e.push(i);if(!e.length)return;board[e[Math.floor(Math.random()*e.length)]]=Math.random()<0.9?2:4;}
+function slide(row){var a=row.filter(function(v){return v;});for(var i=0;i<a.length-1;i++){if(a[i]===a[i+1]){a[i]*=2;score+=a[i];a.splice(i+1,1);}}while(a.length<4)a.push(0);return a;}
+function move(dir){var prev=board.join(',');
+for(var i=0;i<4;i++){var row=[];
+for(var j=0;j<4;j++){row.push(board[(dir==='left'||dir==='right')?i*4+j:j*4+i]);}
+if(dir==='right'||dir==='down')row.reverse();
+row=slide(row);
+if(dir==='right'||dir==='down')row.reverse();
+for(var k=0;k<4;k++){board[(dir==='left'||dir==='right')?i*4+k:k*4+i]=row[k];}}
+if(board.join(',')!==prev){add();check();render();}}
+function check(){if(!won&&board.indexOf(2048)>=0){won=true;flash('🎉 达成 2048！继续挑战更高分');}
+over=!board.some(function(v){return !v;});
+if(over){outer:for(var i=0;i<4;i++)for(var j=0;j<4;j++){var v=board[i*4+j];if(j<3&&v===board[i*4+j+1]){over=false;break outer;}if(i<3&&v===board[(i+1)*4+j]){over=false;break outer;}}}}
+function flash(m){var el=document.getElementById('msg');el.textContent=m;setTimeout(function(){el.textContent='';},2600);}
+function render(){var g=document.getElementById('grid');g.innerHTML='';
+for(var i=0;i<16;i++){var v=board[i];var c=document.createElement('div');
+c.className='cell'+(v?(' t'+(v<=2048?v:'big')):'');c.textContent=v||'';g.appendChild(c);}
+document.getElementById('score').textContent=score;
+if(score>best){best=score;localStorage.setItem(KEY+'-best',String(best));}
+document.getElementById('best').textContent=best;
+var ov=document.getElementById('overlay');
+if(over){ov.classList.remove('hidden');document.getElementById('ovmsg').textContent='游戏结束 · 得分 '+score;}
+else ov.classList.add('hidden');}
+window.addEventListener('keydown',function(e){var m={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[e.key];if(m){e.preventDefault();if(!over)move(m);}});
+var sx=0,sy=0;
+document.addEventListener('touchstart',function(e){var t=e.changedTouches[0];sx=t.clientX;sy=t.clientY;},{passive:true});
+document.addEventListener('touchend',function(e){var t=e.changedTouches[0];var dx=t.clientX-sx,dy=t.clientY-sy;
+if(Math.max(Math.abs(dx),Math.abs(dy))<24)return;
+if(Math.abs(dx)>Math.abs(dy))move(dx>0?'right':'left');else move(dy>0?'down':'up');},{passive:true});
+document.getElementById('new').onclick=newGame;
+document.getElementById('again').onclick=newGame;
+newGame();`;
+  const p = wrap(name, '2048 小游戏 · 最高分保存在本地浏览器', body, script);
+  return { ...p, kind: 'game2048', label: '2048 小游戏', unsupported: false };
+}
+
 function buildUnsupported(name: string): GenResult {
   const body =
     '<div class="card" style="text-align:center">' +
@@ -288,6 +355,7 @@ function buildUnsupported(name: string): GenResult {
 }
 
 function detect(t: string): string {
+  if (/2048/.test(t)) return 'game2048';
   if (/登录|注册|支付|付款|信用卡|数据库|服务器|后端|接口|地图|定位|导航|实时|聊天|客服|人工智能|\bAI\b|视频|直播|语音|3D|三维|区块链|多用户|协作|权限|用户系统/.test(t)) return 'unsupported';
   if (/番茄|pomodoro/i.test(t)) return 'pomodoro';
   if (/倒计时|countdown/i.test(t)) return 'countdown';
@@ -305,6 +373,7 @@ export function generateApp(spec: string, appName: string): GenResult {
   const name = appName || '我的应用';
   switch (detect(t)) {
     case 'unsupported': return buildUnsupported(name);
+    case 'game2048': return build2048(name);
     case 'pomodoro': return buildPomodoro(name);
     case 'countdown': return buildCountdown(name);
     case 'calculator': return buildCalculator(name);
