@@ -521,12 +521,69 @@ export function useProjects() {
     cloudLogin();
   }, []);
 
-  /** 退出登录：清除会话状态并调用平台登出（本地项目缓存保留） */
-  const logout = useCallback(() => {
+  /**
+   * 立即同步所有未同步 / 有变更的项目到云端（退出登录前调用，绕过 800ms 防抖）。
+   * 返回"已确认存在于云端"的项目 id 集合：原本有 cloudId 的 + 本次成功 create 的。
+   * 无 cloudId 且同步失败的项目不纳入集合，退出时保留其本地缓存（降级不丢数据）。
+   */
+  const flushSync = useCallback(async (): Promise<Set<string>> => {
+    const synced = new Set<string>();
+    for (const p of projectsRef.current) {
+      const payload = toPayload(p);
+      if (p.cloudId) {
+        if (lastSyncedRef.current[p.id] !== JSON.stringify(payload)) {
+          try {
+            await cloudUpdate(p.cloudId, payload);
+            lastSyncedRef.current[p.id] = JSON.stringify(payload);
+          } catch {
+            // 更新失败：云端仍有旧版本，仍视为"已存在于云端"
+          }
+        }
+        synced.add(p.id);
+      } else {
+        try {
+          const created = await cloudCreate(payload);
+          if (created?.id) {
+            setProjects((prev) => prev.map((x) => (x.id === p.id ? { ...x, cloudId: created.id } : x)));
+            lastSyncedRef.current[p.id] = JSON.stringify(payload);
+            synced.add(p.id);
+          }
+        } catch {
+          // 新建失败：保留本地，下次登录再合并
+        }
+      }
+    }
+    return synced;
+  }, []);
+
+  /**
+   * 退出登录：先 flush 待同步数据 → 清除已同步项目的本地缓存与应用数据
+   * （共享设备安全：账号数据不在本地留存，重新登录以云端拉取为准）→ 平台登出。
+   * 未同步（无 cloudId 且 flush 失败）的项目保留本地，避免网络异常丢数据。
+   */
+  const logout = useCallback(async () => {
+    setSyncing(true);
+    let synced: Set<string> = new Set();
+    try {
+      synced = await flushSync();
+    } finally {
+      setSyncing(false);
+    }
+    for (const p of projectsRef.current) {
+      if (!synced.has(p.id)) continue;
+      try {
+        localStorage.removeItem(appStorageKey(p.appType, p.id));
+      } catch {
+        // 忽略存储不可用
+      }
+      delete lastSyncedRef.current[p.id];
+    }
+    setProjects((prev) => prev.filter((p) => !synced.has(p.id)));
+    setUi({ mode: 'create', currentProjectId: null });
     setUser(null);
     setAuthState('anonymous');
     void cloudLogout();
-  }, []);
+  }, [flushSync]);
 
   const activeProject = projects.find((p) => p.id === ui.currentProjectId) ?? null;
 
